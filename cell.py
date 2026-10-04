@@ -50,7 +50,12 @@ class Cell:
                 
                 self.weight = 100000 - 100
             case "spike-up":
-                self.weight = 100000
+                # Pincho ya pisado/desactivado: transitable barato. Debe coincidir
+                # con lo que SmartAgent asigna al activar un spike (weight=1).
+                # Verificado en vivo: el bot lo cruza repetidas veces sin morir
+                # (apertura, llave, retornos) y el solve offline completo depende
+                # de ello; bloquearlo rompe el nivel (regresion comprobada).
+                self.weight = 1
 
     def set_neighbors(self, neighbors):
         self.neighbor_up = None

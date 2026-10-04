@@ -1,17 +1,25 @@
+import heapq
 
 
 from cell import Cell
 
 
 class AStar:
-    def __init__(self, start: tuple[int, int], goal: tuple[int, int], grid: list[list['Cell']]):
+    def __init__(self, start: tuple[int, int], goal: tuple[int, int], grid: list[list['Cell']], blocked=None, allow=None):
         self.start = start
         self.goal = goal
         self.grid = grid
         self.rows = len(grid)
         self.cols = len(grid[0])
-        self.open_set = [(start[0], start[1])]  # Usamos tuplas para evitar problemas de mutabilidad
-        self.closed_set = []
+        # blocked: set de (r,c) intransitables extra (puertas sin llave, spikes).
+        # Asi no se mutan celdas y el A* es thread-safe (multi-core real).
+        self.blocked = blocked if blocked is not None else set()
+        # allow: celdas 'rock' que en la simulacion ya quedaron vacias
+        self.allow = allow if allow is not None else set()
+        self._heap = []
+        self._counter = 0
+        self.open_set = set()
+        self.closed_set = set()
         self.g_score = [[float('inf') for _ in range(self.cols)] for _ in range(self.rows)]
         self.f_score = [[float('inf') for _ in range(self.cols)] for _ in range(self.rows)]
         self.came_from = [[None for _ in range(self.cols)] for _ in range(self.rows)]
@@ -48,25 +56,32 @@ class AStar:
         down : Cell = cell.neighbor_down
         left : Cell = cell.neighbor_left
         right : Cell = cell.neighbor_right
-        
-        if up is not None and up.walkable:
-            neighbors.append(up.coordinates)
-        if down is not None and down.walkable:
-            neighbors.append(down.coordinates)
-        if left is not None and left.walkable:
-            neighbors.append(left.coordinates)
-        if right is not None and right.walkable:
-            neighbors.append(right.coordinates)
-        
+
+        for nb in (up, down, left, right):
+            if nb is None or not nb.walkable:
+                continue
+            nc = (int(nb.coordinates[0]), int(nb.coordinates[1]))
+            if nc in self.blocked:
+                continue
+            if nb.cell_type == "rock" and nc not in self.allow and nc != (int(self.goal[0]), int(self.goal[1])):
+                continue
+            neighbors.append(nb.coordinates)
+
         return neighbors
 
     def search(self):
-        self.g_score[self.start[0]][self.start[1]] = 0
-        self.f_score[self.start[0]][self.start[1]] = self.heuristic(self.start, self.goal)
+        sx, sy = int(self.start[0]), int(self.start[1])
+        self.g_score[sx][sy] = 0
+        f0 = self.heuristic(self.start, self.goal)
+        self.f_score[sx][sy] = f0
+        heapq.heappush(self._heap, (f0, self._counter, (sx, sy)))
+        self._counter += 1
+        self.open_set.add((sx, sy))
 
-        while self.open_set:
-            current = min(self.open_set, key=lambda x: self.f_score[x[0]][x[1]])
-            current = (current[0], current[1])  # Aseguramos que sea un tuple
+        while self._heap:
+            _, _, current = heapq.heappop(self._heap)
+            if current in self.closed_set:
+                continue
             if current[0] == self.goal[0] and current[1] == self.goal[1]:
                 self.path = self.reconstruct_path(current)
                 self.total_weight = self.g_score[current[0]][current[1]]
@@ -77,23 +92,28 @@ class AStar:
                     "directions": self.directions
                 }
 
-            self.open_set.remove(current)
-            self.closed_set.append(current)
+            self.open_set.discard(current)
+            self.closed_set.add(current)
 
             for neighbor in self.get_neighbors(current):
-                neighbor = (neighbor[0], neighbor[1])  # Aseguramos que sea un tuple
+                neighbor = (int(neighbor[0]), int(neighbor[1]))
                 if neighbor in self.closed_set:
                     continue
 
-                tentative_g = self.g_score[current[0]][current[1]] + self.grid[neighbor[0]][neighbor[1]].weight
-
-                if neighbor not in self.open_set:
-                    self.open_set.append(neighbor)
-                elif tentative_g >= self.g_score[neighbor[0]][neighbor[1]]:
+                ncell = self.grid[neighbor[0]][neighbor[1]]
+                if ncell is None:
                     continue
-                
-                self.came_from[neighbor[0]][neighbor[1]] = [current[0],current[1]]
+                tentative_g = self.g_score[current[0]][current[1]] + ncell.weight
+
+                if tentative_g >= self.g_score[neighbor[0]][neighbor[1]]:
+                    continue
+
+                self.came_from[neighbor[0]][neighbor[1]] = [current[0], current[1]]
                 self.g_score[neighbor[0]][neighbor[1]] = tentative_g
-                self.f_score[neighbor[0]][neighbor[1]] = tentative_g + self.heuristic(neighbor, self.goal)
+                f = tentative_g + self.heuristic(neighbor, self.goal)
+                self.f_score[neighbor[0]][neighbor[1]] = f
+                heapq.heappush(self._heap, (f, self._counter, neighbor))
+                self._counter += 1
+                self.open_set.add(neighbor)
 
         return None

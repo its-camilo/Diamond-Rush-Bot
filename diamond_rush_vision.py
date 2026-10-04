@@ -1,5 +1,10 @@
+import os as _os
 import re
 import cv2
+try:
+    cv2.setNumThreads(max(4, (_os.cpu_count() or 4) // 2))
+except Exception:
+    pass
 import numpy as np
 import pyautogui
 from typing import Optional, Tuple, Dict, List
@@ -7,6 +12,7 @@ from cell import Cell
 
 class DiamondRushVision:
     def __init__(self):
+        self.suppressed_cells = set()
         self.templates_raw = self.load_templates()
         self.contours_spike = None
         self.contours_diamond = None
@@ -110,7 +116,7 @@ class DiamondRushVision:
             self.templates_raw[name] = cv2.resize(
                 template, 
                 (int(cell_width), int(cell_height)), 
-                interpolation=cv2.INTER_NEAREST
+                interpolation=cv2.INTER_AREA
             )
     
     def _find_spike_contours(self) -> List:
@@ -178,9 +184,36 @@ class DiamondRushVision:
             contours = sorted(contours, key=cv2.contourArea, reverse=True)[:1]
             sum_score = sum(cv2.matchShapes(contours_spike[i], contours[i], cv2.CONTOURS_MATCH_I1, 0.0) 
                            for i in range(len(contours_spike)))
-            return sum_score < 3
+            return sum_score < 1.0
         return False
     
+    def _detect_spike_fallback(self, cell_roi: np.ndarray) -> bool:
+        """Respaldo cuando detect_spike falla por ruido en los contornos.
+
+        El template a 0.80 no siempre matchea (pinchos pequenos y oscuros) y el
+        conteo exacto de contornos es fragil. Se exige forma (matchTemplate >=
+        0.55; el suelo da ~0.03 y el hueco ~0.11) y material (pixeles casi negros
+        >= 1.2%; el suelo tiene 0% y el hueco ~1.1%). Calibrado offline con los
+        sprites del repo.
+        """
+        try:
+            template = self.templates_raw.get("spike")
+            if template is None or cell_roi is None:
+                return False
+            if (cell_roi.shape[0] < template.shape[0]
+                    or cell_roi.shape[1] < template.shape[1]):
+                return False
+            result = cv2.matchTemplate(cell_roi, template, cv2.TM_CCOEFF_NORMED)
+            _, max_val, _, _ = cv2.minMaxLoc(result)
+            if max_val < 0.55:
+                return False
+            lower_bound = np.array([0, 0, 0])
+            upper_bound = np.array([20, 20, 20])
+            dark_fraction = float((cv2.inRange(cell_roi, lower_bound, upper_bound) > 0).mean())
+            return dark_fraction >= 0.012
+        except Exception:
+            return False
+
     def detect_diamond(self, cell_roi: np.ndarray) -> bool:
         """Check if a cell contains a diamond."""
         lower_bound = np.array([90, 70, 20])
@@ -190,7 +223,7 @@ class DiamondRushVision:
         
         if len(contours) == 1:
             match_score = cv2.matchShapes(self.contours_diamond, contours[0], cv2.CONTOURS_MATCH_I1, 0.0)
-            return match_score < 0.5
+            return match_score < 0.2
         return False
     
     def detect_rock(self, cell_roi: np.ndarray) -> bool:
@@ -203,7 +236,7 @@ class DiamondRushVision:
         if len(contours) == 5:
             contours = sorted(contours, key=cv2.contourArea, reverse=True)[:1]
             match_score = cv2.matchShapes(self.contours_rock, contours[0], cv2.CONTOURS_MATCH_I1, 0.0)
-            return match_score < 0.5
+            return match_score < 0.2
         return False
     
     def detect_fall(self, cell_roi: np.ndarray) -> bool:
@@ -220,15 +253,18 @@ class DiamondRushVision:
     
     def detect_key(self, cell_roi: np.ndarray) -> bool:
         """Check if a cell contains a key."""
-        lower_bound = np.array([50, 50, 10])
-        upper_bound = np.array([200, 200, 40])
+        lower_bound = np.array([40, 40, 5])
+        upper_bound = np.array([210, 210, 60])
         mask = cv2.inRange(cell_roi, lower_bound, upper_bound)
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
-        if len(contours) == 1:
-            match_score = cv2.matchShapes(self.contours_key, contours[0], cv2.CONTOURS_MATCH_I1, 0.0)
-            return match_score < 0.5
-        return False
+        if not contours or self.contours_key is None:
+            return False
+        # La llave izquierda sale con 2-3 contornos por fondo/ruido: evaluar el mejor, no exigir exactamente 1
+        scored = [cv2.matchShapes(self.contours_key, c, cv2.CONTOURS_MATCH_I1, 0.0) for c in contours if cv2.contourArea(c) > 10]
+        if not scored:
+            return False
+        return min(scored) < 0.45
     
     def detect_door(self, cell_roi: np.ndarray) -> bool:
         """Check if a cell contains a door."""
@@ -239,10 +275,11 @@ class DiamondRushVision:
         
         if len(contours) == 1:
             match_score = cv2.matchShapes(self.contours_door, contours[0], cv2.CONTOURS_MATCH_I1, 0.0)
-            return match_score < 0.5
+            return match_score < 0.2
         return False
     
     def tag_cells(self, img_res: np.ndarray, img: np.ndarray, rows: int, cols: int) -> List[List[Optional[Cell]]]:
+        prev = getattr(self, "_prev_types", None)
         """
         Analyze each cell in the grid and identify its content.
         Returns a 2D grid of Cell objects.
@@ -260,11 +297,28 @@ class DiamondRushVision:
                 
                 # Check for template matches first
                 match_found = False
-                for name, template in self.templates_raw.items():
+                # Orden: key primero (vs diamond mismo cyan), resto en orden original del repo
+                # (player1,2,3 antes que player-with-key1,2). El sorted alfabetico rompia esto.
+                items = list(self.templates_raw.items())
+                ordered = [kv for kv in items if kv[0].startswith("key")] + [kv for kv in items if not kv[0].startswith("key")]
+                # Head-to-head entre players: elegir el mejor score, no el primero que pase el umbral
+                best_player = (None, None, -1.0)
+                for name, template in ordered:
                     result = cv2.matchTemplate(cell_roi, template, cv2.TM_CCOEFF_NORMED)
                     _, max_val, _, _ = cv2.minMaxLoc(result)
-                    
-                    if max_val >= 0.75:
+                    if name.startswith("player"):
+                        thresh = 0.60
+                    elif name.startswith("key"):
+                        thresh = 0.65
+                    elif name.startswith("diamond"):
+                        thresh = 0.85
+                    else:
+                        thresh = 0.80
+                    if name.startswith("player"):
+                        if max_val > best_player[2]:
+                            best_player = (name, template, max_val)
+                        continue
+                    if max_val >= thresh:
                         # Draw rectangle and label for detected object
                         cv2.rectangle(img_res, (cell_x, cell_y), 
                                      (cell_x + cell_w, cell_y + cell_h), 
@@ -276,15 +330,50 @@ class DiamondRushVision:
                         
                         # Remove any numbers from the end of the name
                         clean_name = re.sub(r'\d+$', '', name)
+                        if clean_name == "player-with-key":
+                            # Verificar cyan real en el ROI: el player sin llave matchea
+                            # el template con-key al 0.60 por parecido. Sin cyan -> player raso.
+                            import numpy as _np
+                            _lb = _np.array([40, 40, 5])
+                            _ub = _np.array([210, 210, 60])
+                            _mask = cv2.inRange(cell_roi, _lb, _ub)
+                            _cyan_px = int((_mask > 0).sum())
+                            if _cyan_px < 200:
+                                clean_name = "player"
+                                print(f"player-with-key degradado a player en ({i},{j}) cyan_px={_cyan_px}")
                         grid[i][j] = Cell(cell_type=clean_name, coordinates=[i,j])
                         match_found = True
                         break
                 
+                if best_player[0] is not None and not match_found:
+                    pname, _, pscore = best_player
+                    if pscore >= 0.60:
+                        clean_p = re.sub(r'\d+$', '', pname)
+                        if clean_p == "player-with-key":
+                            import numpy as _np
+                            h, w = cell_roi.shape[:2]
+                            sub = cell_roi[int(h*0.2):int(h*0.8), int(w*0.25):int(w*0.95)]
+                            _lb = _np.array([60, 90, 10])
+                            _ub = _np.array([200, 200, 70])
+                            _mask = cv2.inRange(sub, _lb, _ub)
+                            _cyan_px = int((_mask > 0).sum())
+                            if _cyan_px < 120:
+                                clean_p = "player"
+                                print(f"player-with-key degradado a player en ({i},{j}) cyan_sub={_cyan_px}")
+                        cv2.rectangle(img_res, (cell_x, cell_y),
+                                      (cell_x + cell_w, cell_y + cell_h),
+                                      (0, 255, 0), 2)
+                        cv2.putText(img_res, clean_p.capitalize(),
+                                    (cell_x, cell_y + 12),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.35,
+                                    (0, 255, 0), 1)
+                        grid[i][j] = Cell(cell_type=clean_p, coordinates=[i, j])
+                        match_found = True
                 if match_found:
                     continue
                 
                 # Check for specific objects if no template match was found
-                if self.detect_spike(cell_roi):
+                if self.detect_spike(cell_roi) or self._detect_spike_fallback(cell_roi):
                     cv2.rectangle(img_res, (cell_x, cell_y), 
                                  (cell_x + cell_w, cell_y + cell_h), 
                                  (0, 0, 255), 1)
@@ -321,15 +410,64 @@ class DiamondRushVision:
                 terrain_mean_color = cv2.mean(self.templates_raw["terrain"])[:3]
                 color_diff = np.linalg.norm(np.array(roi_mean_color) - np.array(terrain_mean_color))
                 
-                if color_diff < 25:  # Color threshold for terrain
-                    cv2.rectangle(img_res, (cell_x, cell_y), 
-                                 (cell_x + cell_w, cell_y + cell_h), 
+                if color_diff < 38:  # Histeresis antorchas (25 aislaba con muros falsos)
+                    _is_floor = True
+                else:
+                    # Caja de suelo: marron oscuro. Muros/rocas claros (media>110),
+                    # pinchos negros, llaves/diamantes cyan quedan fuera.
+                    _b, _g, _r = roi_mean_color
+                    _is_floor = (35 <= _b <= 125 and 25 <= _g <= 110 and 15 <= _r <= 95
+                                 and (_b + _g + _r) / 3 < 110)
+                if not _is_floor:
+                    try:
+                        _tm = self.templates_raw.get("terrain")
+                        if _tm is not None and cell_roi.shape[0] > 0 and cell_roi.shape[1] > 0:
+                            _rr = cv2.matchTemplate(cell_roi, _tm, cv2.TM_CCOEFF_NORMED)
+                            _, _mx, _, _ = cv2.minMaxLoc(_rr)
+                            if _mx >= 0.70:
+                                _is_floor = True
+                    except Exception:
+                        pass
+                if not _is_floor and prev is not None:
+                    # Holdover antorchas: era suelo y sigue oscuro -> sigue suelo.
+                    _pb, _pg, _pr = roi_mean_color
+                    if prev.get((i, j)) == "terrain" and (_pb + _pg + _pr) / 3 < 140:
+                        _is_floor = True
+                if _is_floor:
+                    cv2.rectangle(img_res, (cell_x, cell_y),
+                                 (cell_x + cell_w, cell_y + cell_h),
                                  (0, 120, 120), 2)
                     cv2.putText(img_res, "Terrain", (cell_x, cell_y - 10),
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.35, 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.35,
                                (0, 255, 0), 1)
                     grid[i][j] = Cell(cell_type="terrain", coordinates = [i,j])
         
+        # Post-proceso: llaves por imagen completa (robusto a desalineo de media celda).
+        # El match por celda parte la llave izquierda entre 2 celdas y la marca Terrain.
+        try:
+            self._override_keys_full_image(img, img_res, grid, rows, cols)
+        except Exception as e:
+            print(f"key override omitido: {e}")
+        try:
+            self._override_diamonds_full_image(img, img_res, grid, rows, cols)
+        except Exception as e:
+            print(f"diamond override omitido: {e}")
+        # Rescate del jugador: si esta parado sobre llave/diamante, el match por
+        # celda lo clasifica como key/diamond (las keys van primero) y el player
+        # desaparece -> "No se pudo encontrar la posicion" en bucle. El
+        # full-image de llave ademas resucita la llave bajo sus pies.
+        try:
+            self._rescue_player_full_image(img, img_res, grid, rows, cols)
+        except Exception as e:
+            print(f"player rescue omitido: {e}")
+
+        # Memorizar tipos para el holdover de la proxima captura.
+        try:
+            self._prev_types = {(i, j): (grid[i][j].cell_type if grid[i][j] is not None else None)
+                                for i in range(rows) for j in range(cols)}
+        except Exception:
+            pass
+
         # Update neighbors for each cell
         for i in range(rows):
             for j in range(cols):
@@ -346,6 +484,233 @@ class DiamondRushVision:
         
         return grid
     
+    def mark_collected(self, action):
+        """Recuerda una celda recogida para que los overrides full-image no la
+        resuciten (fantasmas como el diamante de (6,5) o llaves ya en mano).
+        Solo afecta a overrides; la clasificacion directa por celda manda."""
+        try:
+            if getattr(action, "action", "") in ("get_diamond", "get_key"):
+                self.suppressed_cells.add((int(action.coordinates[0]),
+                                           int(action.coordinates[1])))
+        except (TypeError, ValueError, IndexError, AttributeError):
+            pass
+
+    def unmark_collected(self, action):
+        """El atasco demuestra que no se recogio nada: liberar la celda."""
+        try:
+            self.suppressed_cells.discard((int(action.coordinates[0]),
+                                            int(action.coordinates[1])))
+        except (TypeError, ValueError, IndexError, AttributeError):
+            pass
+
+    def clear_suppressed(self):
+        self.suppressed_cells = set()
+
+    def _override_keys_full_image(self, img, img_res, grid, rows, cols):
+        """Busca el template de llave en toda el area de juego y fuerza esas celdas a key.
+        Corrige las 2 llaves no detectadas por partirse entre celdas (Terrain/Diamond).
+        Con validacion cruzada por celda (media llave real da ~0.77; suelo ~0.0,
+        roca 0.25, diamante 0.35): los picos debiles de suelo/objetos ya no
+        crean llaves fantasma que el bot perseguiria en vano."""
+        import numpy as np
+        x1, y1, x2, y2 = self.game_rectangle
+        crop = img[y1:y2, x1:x2]
+        if crop is None or crop.size == 0:
+            return
+        template = self.templates_raw.get("key")
+        if template is None:
+            return
+        res = cv2.matchTemplate(crop, template, cv2.TM_CCOEFF_NORMED)
+        ys, xs = np.where(res >= 0.65)
+        seen = set()
+        suppressed = 0
+        for yy, xx in zip(ys.tolist(), xs.tolist()):
+            cx = x1 + xx + template.shape[1] // 2
+            cy = y1 + yy + template.shape[0] // 2
+            j = int(round((cx - self.game_rectangle[0]) / self.cell_width - 0.5))
+            i = int(round((cy - self.game_rectangle[1]) / self.cell_height - 0.5))
+            if i < 3:
+                continue
+            if 0 <= i < rows and 0 <= j < cols and (i, j) not in seen:
+                seen.add((i, j))
+                if (i, j) in self.suppressed_cells:
+                    suppressed += 1
+                    continue
+                cur = grid[i][j]
+                if cur is None or cur.cell_type in ("terrain", "diamond"):
+                    try:
+                        ch = int(self.cell_height)
+                        cw = int(self.cell_width)
+                        roi = img[int(y1 + i * ch):int(y1 + (i + 1) * ch),
+                                  int(x1 + j * cw):int(x1 + (j + 1) * cw)]
+                        rr = cv2.matchTemplate(roi, template, cv2.TM_CCOEFF_NORMED)
+                        _, cell_score, _, _ = cv2.minMaxLoc(rr)
+                    except Exception:
+                        continue
+                    if cell_score < 0.40:
+                        continue
+                    cell_x = int(self.game_rectangle[0] + j * self.cell_width)
+                    cell_y = int(self.game_rectangle[1] + i * self.cell_height)
+                    cell_w = int(self.cell_width)
+                    cell_h = int(self.cell_height)
+                    cv2.rectangle(img_res, (cell_x, cell_y),
+                                  (cell_x + cell_w, cell_y + cell_h),
+                                  (0, 255, 0), 2)
+                    cv2.putText(img_res, "Key-Full", (cell_x, cell_y + 12),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.35,
+                                (0, 255, 0), 1)
+                    from cell import Cell as _Cell
+                    grid[i][j] = _Cell(cell_type="key", coordinates=[i, j])
+                    print(f"Key recuperada por full-image en ({i},{j})")
+        if suppressed:
+            print(f"Key override suprimido en {suppressed} celda(s) ya recogida(s)")
+
+    def _override_diamonds_full_image(self, img, img_res, grid, rows, cols):
+        """Recupera diamantes perdidos por el umbral estricto (0.85).
+        Solo rellena celdas terrain/None; nunca pisa key/door/player (evita la
+        confusion inversa a la de llaves). Asi la roca nunca ve 'terrain'
+        donde hay un diamante real."""
+        import numpy as np
+        x1, y1, x2, y2 = self.game_rectangle
+        crop = img[y1:y2, x1:x2]
+        if crop is None or crop.size == 0:
+            return
+        template = self.templates_raw.get("diamond")
+        if template is None:
+            return
+        res = cv2.matchTemplate(crop, template, cv2.TM_CCOEFF_NORMED)
+        ys, xs = np.where(res >= 0.65)
+        seen = set()
+        suppressed = 0
+        for yy, xx in zip(ys.tolist(), xs.tolist()):
+            cx = x1 + xx + template.shape[1] // 2
+            cy = y1 + yy + template.shape[0] // 2
+            j = int(round((cx - self.game_rectangle[0]) / self.cell_width - 0.5))
+            i = int(round((cy - self.game_rectangle[1]) / self.cell_height - 0.5))
+            if i < 3:
+                continue
+            if 0 <= i < rows and 0 <= j < cols and (i, j) not in seen:
+                seen.add((i, j))
+                if (i, j) in self.suppressed_cells:
+                    suppressed += 1
+                    continue
+                cur = grid[i][j]
+                if cur is None or cur.cell_type == "terrain":
+                    # Validacion cruzada: el score por celda debe respaldar el pico
+                    # de imagen completa. El suelo da ~0.0 y medio diamante real
+                    # da ~0.75; los fantasmas (suelo/antas) caen aqui.
+                    try:
+                        ch = int(self.cell_height)
+                        cw = int(self.cell_width)
+                        roi = img[int(y1 + i * ch):int(y1 + (i + 1) * ch),
+                                  int(x1 + j * cw):int(x1 + (j + 1) * cw)]
+                        rr = cv2.matchTemplate(roi, template, cv2.TM_CCOEFF_NORMED)
+                        _, cell_score, _, _ = cv2.minMaxLoc(rr)
+                    except Exception:
+                        continue
+                    if cell_score < 0.40:
+                        continue
+                    cell_x = int(self.game_rectangle[0] + j * self.cell_width)
+                    cell_y = int(self.game_rectangle[1] + i * self.cell_height)
+                    cell_w = int(self.cell_width)
+                    cell_h = int(self.cell_height)
+                    cv2.rectangle(img_res, (cell_x, cell_y),
+                                  (cell_x + cell_w, cell_y + cell_h),
+                                  (0, 255, 0), 2)
+                    cv2.putText(img_res, "Diamond-Full", (cell_x, cell_y + 12),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.35,
+                                (0, 255, 0), 1)
+                    from cell import Cell as _Cell
+                    grid[i][j] = _Cell(cell_type="diamond", coordinates=[i, j])
+                    print(f"Diamante recuperado por full-image en ({i},{j})")
+        if suppressed:
+            print(f"Diamond override suprimido en {suppressed} celda(s) ya recogida(s)")
+
+    @staticmethod
+    def should_rescue_player(current_type, player_score, threshold=0.60):
+        """Decision pura del rescate: solo celdas donde el jugador puede estar
+        parado encima del item (key/diamond/tierra) y score suficiente. Nunca
+        pisa roca/puerta/foso/pincho/escalera ni un player ya detectado."""
+        if current_type in ("player", "player-with-key", "player-with-key1",
+                            "player-with-key2", "rock", "door", "metal-door",
+                            "fall", "spike", "spike-up", "ladder", "ladder-open",
+                            "rock-in-fall", "rock-in-button", "button",
+                            "push_button", "push-button"):
+            return False
+        try:
+            return float(player_score) >= float(threshold)
+        except (TypeError, ValueError):
+            return False
+
+    def _rescue_player_full_image(self, img, img_res, grid, rows, cols):
+        """Busca sprites del jugador en toda el area y corrige celdas key,
+        diamond o terrain que en realidad lo contienen (jugador encima del
+        item). Con supresion de no-maximos: un sprite a caballo entre 2
+        celdas solo rescata la de mayor score."""
+        import numpy as np
+        # Si ya hay jugador, nada que rescatar.
+        for row in grid:
+            for cell in row:
+                if cell is not None and cell.cell_type in ("player", "player-with-key",
+                                                          "player-with-key1",
+                                                          "player-with-key2"):
+                    return
+        x1, y1, x2, y2 = self.game_rectangle
+        crop = img[y1:y2, x1:x2]
+        if crop is None or crop.size == 0:
+            return
+        names = [n for n in self.templates_raw.keys() if n.startswith("player")]
+        if not names:
+            return
+        cands = []
+        for name in names:
+            template = self.templates_raw.get(name)
+            if template is None:
+                continue
+            res = cv2.matchTemplate(crop, template, cv2.TM_CCOEFF_NORMED)
+            ys, xs = np.where(res >= 0.60)
+            for yy, xx in zip(ys.tolist(), xs.tolist()):
+                cx = x1 + xx + template.shape[1] // 2
+                cy = y1 + yy + template.shape[0] // 2
+                j = int(round((cx - self.game_rectangle[0]) / self.cell_width - 0.5))
+                i = int(round((cy - self.game_rectangle[1]) / self.cell_height - 0.5))
+                if i < 3:
+                    continue
+                if 0 <= i < rows and 0 <= j < cols:
+                    cands.append((float(res[yy, xx]), i, j, name))
+        cands.sort(key=lambda c: -c[0])
+        accepted = []
+        for score, i, j, name in cands:
+            if any(abs(i - ai) <= 1 and abs(j - aj) <= 1 for _, ai, aj, _ in accepted):
+                continue
+            cur = grid[i][j]
+            cur_type = cur.cell_type if cur is not None else None
+            if not self.should_rescue_player(cur_type, score):
+                continue
+            # Llave en mano: si la celda era key, el cyan es la llave que lleva.
+            if cur_type == "key":
+                kind = "player-with-key"
+            else:
+                try:
+                    ch = int(self.cell_height)
+                    cw = int(self.cell_width)
+                    roi = img[int(y1 + i * ch):int(y1 + (i + 1) * ch),
+                              int(x1 + j * cw):int(x1 + (j + 1) * cw)]
+                    h, w = roi.shape[:2]
+                    sub = roi[int(h * 0.2):int(h * 0.8), int(w * 0.25):int(w * 0.95)]
+                    mask = cv2.inRange(sub, np.array([60, 90, 10]), np.array([200, 200, 70]))
+                    kind = "player-with-key" if int((mask > 0).sum()) >= 120 else "player"
+                except Exception:
+                    kind = "player"
+            from cell import Cell as _Cell
+            grid[i][j] = _Cell(cell_type=kind, coordinates=[i, j])
+            accepted.append((score, i, j, name))
+            cell_x = int(self.game_rectangle[0] + j * self.cell_width)
+            cell_y = int(self.game_rectangle[1] + i * self.cell_height)
+            cv2.putText(img_res, "Player-Rescue", (cell_x, cell_y + 12),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 255, 0), 1)
+            print(f"Jugador rescatado por full-image en ({i},{j}) como {kind}")
+
     def load_templates(self) -> Dict[str, np.ndarray]:
         """Load all template images for object detection."""
         return {

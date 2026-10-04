@@ -1,242 +1,65 @@
-# Diamond Rush Bot
+# Diamond Rush Bot (fork mejorado)
 
-[![Python 3.8+](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Status: Proof of Concept](https://img.shields.io/badge/Status-Proof%20of%20Concept-orange.svg)](#status)
+Bot autónomo que juega **Diamond Rush** de Minijuegos
+(`https://www.minijuegos.com/embed/diamond-rush`) con visión por computador,
+A\*, simulación de empujes y ejecución closed-loop (un objetivo por vuelta +
+recaptura).
 
-An intelligent automated bot for playing **Diamond Rush** from the [Minijuegos](https://www.minijuegos.com) gaming platform. This project combines **computer vision** for real-time game perception with **AI-powered decision making** to autonomously solve Diamond Rush puzzles.
+## Estado actual
 
-## 📋 Table of Contents
+- Niveles 1–3: superados. Nivel 4 (rocas/huecos): superado. Nivel llave/puerta
+  (`0/8`): resuelto offline y en vivo hasta la escalera.
+- Nivel 6 (guía Google AI Studio, fases 1–5): el bot juega solo hasta ~10/8
+  (llave1 → puerta izq → diamantes → llave2 → puerta central → jaula).
+- **Falta**: cerrar el nivel de forma fiable. Último atasco conocido: parálisis
+  del planner en `(9,8)` sin llave (puerta `(8,5)` exige llave, llave2 vetada
+  por preorder o inalcanzable, spikes vetados, diamante `(9,5)` aislado).
+  Cubierto con fallback de spike de último recurso + supresión de fantasmas,
+  pendiente validar en vivo.
 
-- [Overview](#overview)
-- [Features](#features)
-- [Architecture](#architecture)
-- [Requirements](#requirements)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Demo](#demo)
-- [How It Works](#how-it-works)
-- [Limitations](#limitations)
-- [Project Structure](#project-structure)
-- [Contributing](#contributing)
+## Estructura del proyecto
 
-## 🎮 Overview
+| Archivo | Responsabilidad |
+|---|---|
+| `main.py` | Loop closed-loop, foco, stuck detector, llave persistida, gates |
+| `diamond_rush_vision.py` | Captura, templates por celda, overrides full-image, rescate player |
+| `game_state.py` | Planner: llaves/puertas, fills, shoves, spikes, vetoes, barrera Nivel 6 |
+| `smart_agent.py` | `simulate()` greedy con backtracking y mejor parcial |
+| `rock_simulation.py` | BFS exacto de empujes + flood-fill inverso estático |
+| `a_star.py` | A\* con `blocked`/`allow` sin mutar celdas |
+| `keyboard_simulator.py` | Ejecuta solo la primera acción; rechaza caminos vacíos |
+| `cell.py` / `game_action.py` | Celda (tipo, peso, walkable) y acción |
+| `test_rock_simulation.py` | Fixtures de niveles + tests de fills/shoves/puertas |
+| `test_level6_guide.py` | Reglas, fases, fantasma, puente, salida, barrera, fallback |
+| `test_vision_spikes.py` | Spikes, overrides, supresión de recogidos |
+| `test_main_helpers.py` | Foco, rachas, veto, llave, debug off |
 
-Diamond Rush Bot autonomously plays Diamond Rush puzzle games by:
+## Cómo correrlo
 
-1. **Capturing** the game screen in real-time
-2. **Analyzing** the game state using computer vision (object detection, grid mapping)
-3. **Planning** optimal action sequences using A* pathfinding
-4. **Simulating** game mechanics to find winning states
-5. **Executing** commands via keyboard input automation
-
-The bot is designed for the standard web version of Diamond Rush and works by intelligently prioritizing objectives (collecting diamonds, avoiding hazards, using keys to open doors) and computing optimal paths to solve each puzzle.
-
-## ✨ Features
-
-- **Real-time Computer Vision**: Automatically detects game elements (player, diamonds, rocks, spikes, doors, keys, ladders)
-- **Intelligent Path Planning**: Uses A* algorithm to find optimal routes between objectives
-- **Game State Simulation**: Predicts game outcomes before executing actions
-- **Autonomous Gameplay**: Handles puzzle solving without human intervention
-- **Multiple Game Objects**: Supports interaction with diamonds, rocks, doors, keys, spike traps, and more
-- **Physics Simulation**: Simulates rock physics and falling mechanics
-- **Debug Mode**: Supports testing with pre-recorded screenshots
-
-## 🏗️ Architecture
-
-The project is built on a modular architecture with clear separation of concerns:
-
-```
-Diamond-Rush-Bot/
-├── diamond_rush_vision.py    # Computer vision & object detection
-├── game_state.py              # Game state representation & logic
-├── smart_agent.py             # AI decision making & simulation
-├── a_star.py                  # A* pathfinding algorithm
-├── keyboard_simulator.py       # Input automation
-├── cell.py                     # Grid cell data structure
-├── game_action.py              # Action representation
-├── rock_simulation.py          # Physics simulation
-└── main.py                     # Entry point
+```powershell
+cd "C:\Users\camil\Downloads\Diamond-Rush-Bot"
+python -u -c "import sys; sys.path.insert(0, '.'); import runpy; runpy.run_path('main.py', run_name='__main__')"
 ```
 
-### Key Components
+Python 3.14. Grid 15x10, área `(705,101,1266,942)`, celda ~56px.
+`DEBUG_SHOW_IMAGE = False` (sin ventana: el juego conserva el foco).
+No tocar nada mientras juega; parar con `Ctrl+C`.
 
-| Module | Responsibility |
-|--------|---------------|
-| **diamond_rush_vision.py** | Screen capture, object detection via template matching, grid extraction |
-| **game_state.py** | Grid state management, objective detection, action planning |
-| **smart_agent.py** | Game simulation, action sequencing, win condition detection |
-| **a_star.py** | Pathfinding between player and objectives |
-| **keyboard_simulator.py** | Executes planned actions via keyboard input |
-| **cell.py** | Individual grid cell properties (walkability, weight, neighbors) |
+## Tests (86, todos offline, sin navegador)
 
-## 📦 Requirements
-
-- **Python**: 3.8 or higher
-- **Operating System**: Windows/macOS/Linux
-
-## 🚀 Installation
-
-### 1. Clone the Repository
-
-```bash
-git clone https://github.com/yourusername/Diamond-Rush-Bot.git
-cd Diamond-Rush-Bot
+```powershell
+python -c "import sys; sys.path.insert(0, '.'); import unittest; s=unittest.defaultTestLoader.loadTestsFromNames(['test_level6_guide','test_rock_simulation','test_vision_spikes','test_main_helpers']); r=unittest.TextTestRunner(verbosity=1).run(s); sys.exit(not r.wasSuccessful())"
 ```
 
-### 2. Create a Virtual Environment (Recommended)
+## Repos originales
 
-```bash
-python -m venv venv
+- Seb: `https://github.com/SebMatDo/Diamond-Rush-Bot` — base del proyecto
+  (visión, A\*, greedy+backtracking). Sin anti-teleport, sin chequeo de salida,
+  rock sim con bug declarado. No tiene estrategia anti-softlock reutilizable.
+- Valentina: `https://github.com/ValentinaChicua/DiamondRush` — un solo archivo,
+  una captura → A\* global → ejecuta todo a ciegas, sin replanificar. De aquí
+  salen el flood-fill inverso roca→hueco, el emparejamiento llave-puerta por
+  Manhattan y el BFS exacto de empuje. Tampoco tiene anti-softlock.
 
-# On Windows:
-venv\Scripts\activate
-
-# On macOS/Linux:
-source venv/bin/activate
-```
-
-### 3. Install Dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-**Detailed dependencies:**
-```bash
-pip install opencv-python      # Computer vision & image processing
-pip install pytautogui         # Screen capture & input automation
-pip install scikit-image       # Advanced image processing
-pip install pyKey              # Keyboard control
-```
-
-## 💻 Usage
-
-### Running the Bot
-
-```bash
-python main.py
-```
-
-The bot will:
-1. Continuously capture the game screen
-2. Detect the game grid and all objects
-3. Compute an optimal solution path
-4. Execute keyboard commands to play the game
-
-### Debug Visualization
-
-The bot supports debug visualization of the detected grid with tagged cells. You can control this behavior through the `show_image` parameter:
-
-**With Debug Visualization (`show_image=True`):**
-```python
-first_grid = vision.realtime_mode(True)
-```
-- Displays the detected game grid with all tagged cells (labels and bounding boxes)
-- Pauses and waits for you to press **ENTER** to continue
-- You need to refocus game after pressing enter
-
-**Example of Tagged Cells Visualization:**
-
-![Tagged grid example showing detected diamonds, rocks, spikes, and player position](readme_screenshot/example.jpg)
-
-**Without Visualization (`show_image=False`):**
-```python
-first_grid = vision.realtime_mode(False)
-```
-- No debug image is displayed
-- Game window remains focused throughout execution
-- Recommended for actual gameplay without interruptions
-
-### Debug Mode (Using Saved Screenshots)
-
-To test the bot with a pre-recorded game state:
-
-```python
-from diamond_rush_vision import DiamondRushVision
-
-vision = DiamondRushVision()
-grid = vision.debug_mode("screenshots/screenshot18.png")
-```
-
-## 🎬 Demo
-
-Watch the agent in action solving Diamond Rush puzzles:
-
-[![Watch the demo on YouTube](https://img.shields.io/badge/YouTube-Watch%20Demo-red?logo=youtube)](https://youtu.be/J1k1kEa-UyU)
-
-This video demonstrates the complete flow of the bot:
-- Real-time game detection and grid analysis
-- Vision system identifying all game objects
-- AI agent computing the optimal solution path
-- Autonomous execution of keyboard commands to solve the puzzle
-
-## 🧠 How It Works
-
-### 1. Vision System
-- Captures screen via `pyautogui`
-- Uses **template matching** to detect game objects (diamonds, rocks, spikes, etc.)
-- Extracts game area using color-based contour detection
-- Maps detected objects to a 2D grid representation
-
-### 2. Game State Analysis
-- Builds an internal grid model from detected objects
-- Identifies key objectives: diamonds, keys, doors, ladder
-- Calculates walkable paths considering spikes and obstacles
-- Tracks player position and inventory (keys held)
-
-### 3. Pathfinding
-- Implements **A* algorithm** with heuristic-based search
-- Computes optimal routes considering:
-  - Terrain weights (normal terrain, spikes, diamonds, keys)
-  - Walkability (respecting fall zones and obstacles)
-  - Objective priorities (get gems → find ladder)
-
-### 4. Decision Making
-- **SmartAgent** simulates game progression
-- Evaluates actions in priority order:
-  1. Reach open ladder (win condition)
-  2. Collect diamonds
-  3. Obtain keys
-  4. Open doors
-  5. Push rocks (puzzle mechanics)
-  6. Traverse spike areas (high risk)
-- Uses greedy approach with backtracking for blocked paths
-
-### 5. Execution
-- Converts planned path into keyboard commands (↑ ↓ ← →)
-- Simulates input with timing delays (~150ms per move)
-- Monitors game progress in real-time
-
-## ⚠️ Limitations
-
-**Computer Vision Limitations:**
-- Object detection relies on **template matching** and may fail with:
-  - Screen resolution changes or non-standard game rendering
-  - Graphical glitches or overlays
-  - Different lighting/contrast conditions
-  - Game UI elements appearing in unexpected locations
-
-**Agent Limitations:**
-- Decision-making can fail when:
-  - Game state estimation diverges from actual game state
-  - Complex puzzle mechanics are encountered
-  - Rock physics simulation is inaccurate
-  - Hidden or context-dependent game rules are present
-
-**General Limitations:**
-- Designed for standard Minijuegos web version
-- Requires consistent game screen positioning
-- Limited to the objects and mechanics in the training set
-- No learning/adaptation between games - uses hardcoded logic
-- May not solve all puzzle variations or custom difficulty levels
-
-## 📝 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## ⚡ Status
-
-**Proof of Concept** - This is an experimental project. While functional, it has known limitations in computer vision and AI decision-making. Use for educational and experimental purposes.
-
-**Rock simulation is bugged**
+Ver `AGENTS.md` para la lógica de tests, límites y fallbacks que deben conocer
+futuros agentes.
