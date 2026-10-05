@@ -26,6 +26,9 @@ recaptura).
 | 9 (trampillas) | escalera `(13,8)` o trampillas `(5,1),(7,8),(12,5)` | `(3,5)` | `D LLL U L D RRR DD L D RRRR U LLLLLL R DDDD L DDD RR LL U R D R UU D LL UU RRR U D R DDD UUUU RR D L U L DD U RR DDD R` |
 | 10 (fosos/spikes) | fosos `(8,2),(8,7)` | `(6,5)` | `DDDD LLLL D R L DD RR UU R U L D L UUU L R UUU L UU RRRR DDDD L DDD RRRR D L R DD LL UU DD LLL UUU RRR D R UUU R L UUU R UU LLL DD L` |
 | 11 (llave/trampilla) | fosos `(5,7),(9,5),(12,1)` | `(4,2)` | `U L DDDD RRR U R DD RR UU DDD U LL U LLLL DDDD RRRR LLLL DD RRRR UUUU R D R UUUU DDD R LLL DD R L DD RRR L UUUUUUUUU LLL` |
+| 12 (lava/llave) | puerta `(5,3)` + terreno de la ruta | `(3,2)` | `L RRR D RR U D R DDDDDDD L R UU LL DD R D LLL UUU LLL DDD RRR UUU LL UUU L R U RR D RRRR DDDDDD` |
+
+Las firmas de los niveles 7 y 10-12 comprueban adem?s el patr?n de terreno (`_terrain_fits`: >=85% de las celdas de la ruta deben existir en el mapa). La lava del Nivel 12 a?n no la modela el simulador (rocas a la lava).
 
 Trampillas (`push_button`): con peso encima (roca o jugador) abren rejas
 (`metal-door`). Una roca sobre una trampilla se sigue empujando. El simulador
@@ -78,7 +81,7 @@ marcas de tiempo, duración de cada pulsación y una secuencia compacta como
 `UUU R UUUU`. Comparte esa secuencia (y, si hace falta, el JSON) para añadirla
 como flujo específico del nivel.
 
-## Tests (114, todos offline, sin navegador)
+## Tests (115, todos offline, sin navegador)
 
 ```powershell
 python -c "import sys; sys.path.insert(0, '.'); import unittest; s=unittest.defaultTestLoader.loadTestsFromNames(['test_level6_guide','test_rock_simulation','test_vision_spikes','test_main_helpers']); r=unittest.TextTestRunner(verbosity=1).run(s); sys.exit(not r.wasSuccessful())"

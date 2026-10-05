@@ -12,7 +12,8 @@ from level_route import (FiveRockLevelRoute, Level6CapturedRoute,
                          is_level7_captured_route, Level9CapturedRoute,
                          LEVEL9_CAPTURE_GROUPS, is_level9_captured_route,
                          Level10CapturedRoute, is_level10_captured_route,
-                         Level11CapturedRoute, is_level11_captured_route)
+                         Level11CapturedRoute, is_level11_captured_route,
+                         Level12CapturedRoute, is_level12_captured_route)
 
 
 def make_level_four_grid():
@@ -1514,6 +1515,22 @@ class Level11CapturedRouteTests(unittest.TestCase):
         self.assertFalse(is_level11_captured_route(make_new_level_grid()))
         route = Level11CapturedRoute(grid, (4, 2))
         self.assertEqual(route.next_action(grid, (4, 2)).path, ["up"])
+
+
+
+class Level12CapturedRouteTests(unittest.TestCase):
+    def test_signature_needs_door_and_terrain_pattern(self):
+        grid = Level10CapturedRouteTests._grid((3, 2))
+        grid[5][3] = Cell((5, 3), "door")
+        self.assertTrue(is_level12_captured_route(grid))
+        route = Level12CapturedRoute(grid, (3, 2))
+        self.assertEqual(route.next_action(grid, (3, 2)).path, ["left"])
+        # sin patron de terreno (mapa casi vacio) no es el nivel
+        empty = [[None] * 10 for _ in range(15)]
+        empty[3][2] = Cell((3, 2), "player")
+        empty[5][3] = Cell((5, 3), "door")
+        self.assertFalse(is_level12_captured_route(empty))
+        self.assertFalse(is_level12_captured_route(make_new_level_grid()))
 
 
 if __name__ == "__main__":

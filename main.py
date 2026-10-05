@@ -8,6 +8,7 @@ from level_route import (FiveRockLevelRoute, Level6CapturedRoute,
                          Level9CapturedRoute, is_level9_captured_route,
                          Level10CapturedRoute, is_level10_captured_route,
                          Level11CapturedRoute, is_level11_captured_route,
+                         Level12CapturedRoute, is_level12_captured_route,
                          is_level8_captured_route, is_five_rock_level,
                          is_level6_captured_route, is_level7_captured_route)
 import asyncio
@@ -210,6 +211,7 @@ def main():
             else "level9_captured" if is_level9_captured_route(first_grid)
             else "level10_captured" if is_level10_captured_route(first_grid)
             else "level11_captured" if is_level11_captured_route(first_grid)
+            else "level12_captured" if is_level12_captured_route(first_grid)
             else "five_rock" if is_five_rock_level(first_grid)
             else None
         )
@@ -224,7 +226,8 @@ def main():
                          "level8_captured": Level8CapturedRoute,
                          "level9_captured": Level9CapturedRoute,
                          "level10_captured": Level10CapturedRoute,
-                         "level11_captured": Level11CapturedRoute}.get(
+                         "level11_captured": Level11CapturedRoute,
+                         "level12_captured": Level12CapturedRoute}.get(
                              route_kind, FiveRockLevelRoute)
             level_route = route_cls(
                 first_grid, new_pos,
@@ -234,7 +237,8 @@ def main():
                      "level8_captured": "ruta grabada de Nivel 8",
                      "level9_captured": "ruta grabada de Nivel 9",
                      "level10_captured": "ruta grabada de Nivel 10",
-                     "level11_captured": "ruta grabada de Nivel 11"}.get(
+                     "level11_captured": "ruta grabada de Nivel 11",
+                     "level12_captured": "ruta grabada de Nivel 12"}.get(
                          route_kind, "ruta RRRR DD ... DDD")
             print(f"Nivel con ruta fija detectado: siguiendo {label}")
             route_fallback_logged = False

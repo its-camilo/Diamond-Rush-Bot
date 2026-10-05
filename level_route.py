@@ -78,6 +78,12 @@ LEVEL11_CAPTURE_GROUPS = tuple(
     "R D R UUUU DDD R LLL DD R L DD RRR L UUUUUUUUU LLL".split())
 LEVEL11_CAPTURE_DIRECTIONS = tuple(
     step for group in LEVEL11_CAPTURE_GROUPS for step in group)
+LEVEL12_CAPTURE_START = (3, 2)
+LEVEL12_CAPTURE_GROUPS = tuple(
+    "L RRR D RR U D R DDDDDDD L R UU LL DD R D LLL UUU LLL DDD RRR UUU LL "
+    "UUU L R U RR D RRRR DDDDDD".split())
+LEVEL12_CAPTURE_DIRECTIONS = tuple(
+    step for group in LEVEL12_CAPTURE_GROUPS for step in group)
 LEVEL7_CAPTURE_START = (4, 2)
 LEVEL7_CAPTURE_GROUPS = (
     "R", "U", "R", "DDDD", "L", "D", "LL", "DDDD", "UU", "RRRRRR",
@@ -288,7 +294,8 @@ def is_level7_captured_route(grid):
     on_route = player in set(route_positions(LEVEL7_CAPTURE_START,
                                              LEVEL7_CAPTURE_DIRECTIONS))
     resumed = on_route and (key_present or has_key or door_present)
-    return initial or resumed
+    return (initial or resumed) and _terrain_fits(
+        grid, LEVEL7_CAPTURE_START, LEVEL7_CAPTURE_DIRECTIONS)
 
 
 def is_level8_captured_route(grid):
@@ -333,6 +340,28 @@ def is_level9_captured_route(grid):
     return buttons >= 2
 
 
+def _terrain_fits(grid, start, directions, minimum=0.85):
+    """Patron de terreno: casi todas las celdas de la ruta deben existir
+    (no ser None/pared) en el mapa capturado. Endurece las firmas."""
+    cells = route_positions(start, directions)
+    ok = sum(_cell_type(grid, p) is not None for p in cells)
+    return ok / len(cells) >= minimum
+
+
+def is_level12_captured_route(grid):
+    """Lava/key level: door (5,3), start (3,2). Firma = puerta + terreno."""
+    if not grid or len(grid) != 15 or len(grid[0]) != 10:
+        return False
+    if _cell_type(grid, (5, 3)) not in ("door", "metal-door"):
+        return False
+    if not any(c is not None and c.cell_type in (
+            "player", "player-with-key", "player-with-key1", "player-with-key2")
+            for row in grid for c in row):
+        return False
+    return _terrain_fits(grid, LEVEL12_CAPTURE_START,
+                         LEVEL12_CAPTURE_DIRECTIONS)
+
+
 def is_level11_captured_route(grid):
     """Key/trapdoor board: pits (5,7),(9,5),(12,1), cage (4,4), start (4,2)."""
     if not grid or len(grid) != 15 or len(grid[0]) != 10:
@@ -340,10 +369,11 @@ def is_level11_captured_route(grid):
     if sum(_cell_type(grid, p) in ("fall", "rock-in-fall")
            for p in ((5, 7), (9, 5), (12, 1))) < 2:
         return False
+    if not _terrain_fits(grid, LEVEL11_CAPTURE_START, LEVEL11_CAPTURE_DIRECTIONS):
+        return False
     return any(cell is not None and cell.cell_type in (
         "player", "player-with-key", "player-with-key1", "player-with-key2")
         for row in grid for cell in row)
-
 
 def is_level10_captured_route(grid):
     """Pit/spike board: pits (8,2),(8,7), cage (5,4), start (6,5)."""
@@ -352,10 +382,11 @@ def is_level10_captured_route(grid):
     if sum(_cell_type(grid, p) in ("fall", "rock-in-fall")
            for p in ((8, 2), (8, 7))) < 2:
         return False
+    if not _terrain_fits(grid, LEVEL10_CAPTURE_START, LEVEL10_CAPTURE_DIRECTIONS):
+        return False
     return any(cell is not None and cell.cell_type in (
         "player", "player-with-key", "player-with-key1", "player-with-key2")
         for row in grid for cell in row)
-
 
 def _cell_type(grid, position):
     row, col = position
@@ -758,6 +789,22 @@ class Level11CapturedRoute(FiveRockLevelRoute):
             grid, player_pos, has_key,
             route_start=LEVEL11_CAPTURE_START,
             route_groups=LEVEL11_CAPTURE_GROUPS,
+            diamond_route_index={},
+            simulate_map=True,
+        )
+
+
+class Level12CapturedRoute(FiveRockLevelRoute):
+    """Rigid route recorded manually for the lava/key level."""
+
+    kind = "level12_captured"
+    rigid = True
+
+    def __init__(self, grid, player_pos, has_key=False):
+        super().__init__(
+            grid, player_pos, has_key,
+            route_start=LEVEL12_CAPTURE_START,
+            route_groups=LEVEL12_CAPTURE_GROUPS,
             diamond_route_index={},
             simulate_map=True,
         )
