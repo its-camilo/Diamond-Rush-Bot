@@ -10,7 +10,8 @@ from level_route import (FiveRockLevelRoute, Level6CapturedRoute,
                          LEVEL7_CAPTURE_GROUPS, ROUTE_GROUPS,
                          is_five_rock_level, is_level6_captured_route,
                          is_level7_captured_route, Level9CapturedRoute,
-                         LEVEL9_CAPTURE_GROUPS, is_level9_captured_route)
+                         LEVEL9_CAPTURE_GROUPS, is_level9_captured_route,
+                         Level10CapturedRoute, is_level10_captured_route)
 
 
 def make_level_four_grid():
@@ -1468,6 +1469,36 @@ class Level9CapturedRouteTests(unittest.TestCase):
         # tras RRR el jugador esta en (4,4); DD cruza la reja (5,4) abierta
         self.assertEqual(position, (6, 4))
         self.assertEqual(grid[5][1].cell_type, "rock-in-button")
+
+
+
+class Level10CapturedRouteTests(unittest.TestCase):
+    @staticmethod
+    def _grid(player=(6, 5)):
+        grid = [[None for _ in range(10)] for _ in range(15)]
+        for row in range(1, 14):
+            for col in range(1, 9):
+                grid[row][col] = Cell((row, col), "terrain")
+        for pos, kind in {(8, 2): "fall", (8, 7): "fall", (5, 4): "ladder",
+                          player: "player"}.items():
+            grid[pos[0]][pos[1]] = Cell(pos, kind)
+        return grid
+
+    def test_detectors(self):
+        self.assertTrue(is_level10_captured_route(self._grid()))
+        self.assertFalse(is_level10_captured_route(make_new_level_grid()))
+        # Nivel 9 sin escalera visible: firma por trampillas
+        grid = Level9CapturedRouteTests._grid()
+        grid[13][8] = Cell((13, 8), "terrain")
+        self.assertTrue(is_level9_captured_route(grid))
+
+    def test_first_group_and_rejoin(self):
+        grid = self._grid()
+        self.assertEqual(Level10CapturedRoute(grid, (6, 5)).next_action(
+            grid, (6, 5)).path, ["down"] * 4)
+        off = self._grid((3, 3))
+        route = Level10CapturedRoute(off, (3, 3))
+        self.assertIsNotNone(route.next_action(off, (3, 3)))
 
 
 if __name__ == "__main__":

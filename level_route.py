@@ -66,6 +66,12 @@ LEVEL9_CAPTURE_GROUPS = (
 )
 LEVEL9_CAPTURE_DIRECTIONS = tuple(
     step for group in LEVEL9_CAPTURE_GROUPS for step in group)
+LEVEL10_CAPTURE_START = (6, 5)
+LEVEL10_CAPTURE_GROUPS = tuple(
+    "DDDD LLLL D R L DD RR UU R U L D L UUU L R UUU L UU RRRR DDDD L DDD "
+    "RRRR D L R DD LL UU DD LLL UUU RRR D R UUU R L UUU R UU LLL DD L".split())
+LEVEL10_CAPTURE_DIRECTIONS = tuple(
+    step for group in LEVEL10_CAPTURE_GROUPS for step in group)
 LEVEL7_CAPTURE_START = (4, 2)
 LEVEL7_CAPTURE_GROUPS = (
     "R", "U", "R", "DDDD", "L", "D", "LL", "DDDD", "UU", "RRRRRR",
@@ -303,14 +309,30 @@ def is_level8_captured_route(grid):
 
 
 def is_level9_captured_route(grid):
-    """Trapdoor board #2: cage/ladder at (13,8), start (3,5), 12 diamonds.
-
-    Firma = escalera/jaula en (13,8) mas un jugador visible. Cualquier
-    posicion del jugador vale; el reenganche BFS lo devuelve a la ruta.
+    """Trapdoor board #2. Firma: escalera/jaula en (13,8) O las trampillas
+    (5,1),(7,8),(12,5) (al inicio la escalera aun no se lee en vivo).
+    Cualquier posicion del jugador vale; el reenganche BFS la devuelve a la ruta.
     """
     if not grid or len(grid) != 15 or len(grid[0]) != 10:
         return False
-    if _cell_type(grid, (13, 8)) not in ("ladder", "ladder-open"):
+    if not any(cell is not None and cell.cell_type in (
+            "player", "player-with-key", "player-with-key1", "player-with-key2")
+            for row in grid for cell in row):
+        return False
+    if _cell_type(grid, (13, 8)) in ("ladder", "ladder-open"):
+        return True
+    buttons = sum(_cell_type(grid, p) in (
+        "push_button", "push-button", "rock-in-button")
+        for p in ((5, 1), (7, 8), (12, 5)))
+    return buttons >= 2
+
+
+def is_level10_captured_route(grid):
+    """Pit/spike board: pits (8,2),(8,7), cage (5,4), start (6,5)."""
+    if not grid or len(grid) != 15 or len(grid[0]) != 10:
+        return False
+    if sum(_cell_type(grid, p) in ("fall", "rock-in-fall")
+           for p in ((8, 2), (8, 7))) < 2:
         return False
     return any(cell is not None and cell.cell_type in (
         "player", "player-with-key", "player-with-key1", "player-with-key2")
@@ -686,6 +708,22 @@ class Level9CapturedRoute(FiveRockLevelRoute):
             grid, player_pos, has_key,
             route_start=LEVEL9_CAPTURE_START,
             route_groups=LEVEL9_CAPTURE_GROUPS,
+            diamond_route_index={},
+            simulate_map=True,
+        )
+
+
+class Level10CapturedRoute(FiveRockLevelRoute):
+    """Rigid route recorded manually for the pit/spike level."""
+
+    kind = "level10_captured"
+    rigid = True
+
+    def __init__(self, grid, player_pos, has_key=False):
+        super().__init__(
+            grid, player_pos, has_key,
+            route_start=LEVEL10_CAPTURE_START,
+            route_groups=LEVEL10_CAPTURE_GROUPS,
             diamond_route_index={},
             simulate_map=True,
         )
