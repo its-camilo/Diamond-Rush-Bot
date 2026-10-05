@@ -7,15 +7,28 @@ recaptura).
 
 ## Estado actual
 
-- Niveles 1–3: superados. Nivel 4 (rocas/huecos): superado. Nivel llave/puerta
-  (`0/8`): resuelto offline y en vivo hasta la escalera.
-- Nivel 6 (guía Google AI Studio, fases 1–5): el bot juega solo hasta ~10/8
-  (llave1 → puerta izq → diamantes → llave2 → puerta central → jaula).
-- **Falta**: cerrar el nivel de forma fiable. Último atasco conocido: parálisis
-  del planner en `(9,8)` sin llave (puerta `(8,5)` exige llave, llave2 vetada
-  por preorder o inalcanzable, spikes vetados, diamante `(9,5)` aislado).
-  Cubierto con fallback de spike de último recurso + supresión de fantasmas,
-  pendiente validar en vivo.
+- Niveles 1-5 (incluidos spikes y rocas/fosos): superados.
+- Niveles 6 a 9: **rutas pregrabadas** a mano con `record_route.py`. Cada una
+  es un guion r?gido que se ejecuta un tramo por captura (closed-loop) y se
+  activa por la firma del mapa (ver tabla). El planner general ya no interviene
+  mientras la ruta sigue viva.
+- Cada ruta se reengancha sola: si el bot arranca (o cae) fuera de la
+  secuencia, un BFS lo lleva al waypoint alcanzable m?s cercano y contin?a.
+- Si la visi?n pierde al jugador (HUD sobre las filas 0-2, animaci?n), la
+  ruta supone que el ?ltimo tramo lleg? a destino y sigue sin esperar.
+
+| Nivel | Firma de detecci?n | Inicio | Secuencia |
+|---|---|---|---|
+| 5 rocas | fosos `(5,6),(7,1),(11,6),(12,3)` | `(3,2)` | `RRRR DD LLLLL DD RRRRRR LDD LLLLL DR UR DDD RD UU LURRUR DDD` |
+| 6 | fosos `(5,1),(5,8),(11,1)` + llaves `(4,8)/(13,4)` | `(3,5)` | `RRR D U LLL D LL U LL D R U R DDD R D L U LL DD R DD UU L UU R DDDD UUU RRRRRR DD L DD LLLLLL DD RRRRRRR UU LLLLLL UUUU RRR DD L` |
+| 7 | fosos `(7,4),(10,1),(10,7)` + llave `(7,7)`, puerta `(11,5)` | `(4,2)` | `R U R DDDD L D LL DDDD UU RRRRRR U R L UU R UU DD L DDD LL DDD` |
+| 8 (trampillas) | fosos `(9,2),(12,2)` + llave `(10,2)`/puerta `(6,7)` | `(7,5)` | `RR LLLL RRRR DDDDD LLL UUU LL DDD RRR UUU RR UUUUUUU LLLLL DDD RRR U` |
+| 9 (trampillas) | escalera/jaula en `(13,8)` | `(3,5)` | `D LLL U L D RRR DD L D RRRR U LLLLLL R DDDD L DDD RR LL U R D R UU D LL UU RRR U D R DDD UUUU RR D L U L DD U RR DDD R` |
+
+Trampillas (`push_button`): con peso encima (roca o jugador) abren rejas
+(`metal-door`). Una roca sobre una trampilla se sigue empujando. El simulador
+de rutas (`_simulate_route_positions`) lo modela de forma aproximada: una reja
+se considera abierta si cualquier trampilla est? pulsada.
 
 ## Estructura del proyecto
 
@@ -25,6 +38,7 @@ recaptura).
 | `diamond_rush_vision.py` | Captura, templates por celda, overrides full-image, rescate player |
 | `game_state.py` | Planner: llaves/puertas, fills, shoves, spikes, vetoes, barrera Nivel 6 |
 | `smart_agent.py` | `simulate()` greedy con backtracking y mejor parcial |
+| `level_route.py` | Detectores + rutas closed-loop específicas por nivel |
 | `rock_simulation.py` | BFS exacto de empujes + flood-fill inverso estático |
 | `a_star.py` | A\* con `blocked`/`allow` sin mutar celdas |
 | `keyboard_simulator.py` | Ejecuta solo la primera acción; rechaza caminos vacíos |
@@ -32,7 +46,7 @@ recaptura).
 | `test_rock_simulation.py` | Fixtures de niveles + tests de fills/shoves/puertas |
 | `test_level6_guide.py` | Reglas, fases, fantasma, puente, salida, barrera, fallback |
 | `test_vision_spikes.py` | Spikes, overrides, supresión de recogidos |
-| `test_main_helpers.py` | Foco, rachas, veto, llave, debug off |
+| `test_main_helpers.py` | Foco, rachas, veto, llave, debug supervised |
 
 ## Cómo correrlo
 
@@ -42,10 +56,27 @@ python -u -c "import sys; sys.path.insert(0, '.'); import runpy; runpy.run_path(
 ```
 
 Python 3.14. Grid 15x10, área `(705,101,1266,942)`, celda ~56px.
-`DEBUG_SHOW_IMAGE = False` (sin ventana: el juego conserva el foco).
+`DEBUG_SHOW_IMAGE = False` por defecto (autónomo, sin ventana). Para activar
+debug supervisado con ENTER por vuelta: `$env:DIAMOND_DEBUG="1"`.
 No tocar nada mientras juega; parar con `Ctrl+C`.
 
-## Tests (86, todos offline, sin navegador)
+## Grabar una ruta manual
+
+Detén primero `main.py` con `Ctrl+C`. Instala el hook opcional y ejecútalo en
+otra consola; solo registra flechas:
+
+```powershell
+pip install pynput
+python record_route.py
+```
+
+Enfoca el juego, pulsa **F8**, recorre el nivel con toques de una casilla por
+flecha y pulsa **F10** para guardar. El JSON de `route-captures/` contiene
+marcas de tiempo, duración de cada pulsación y una secuencia compacta como
+`UUU R UUUU`. Comparte esa secuencia (y, si hace falta, el JSON) para añadirla
+como flujo específico del nivel.
+
+## Tests (111, todos offline, sin navegador)
 
 ```powershell
 python -c "import sys; sys.path.insert(0, '.'); import unittest; s=unittest.defaultTestLoader.loadTestsFromNames(['test_level6_guide','test_rock_simulation','test_vision_spikes','test_main_helpers']); r=unittest.TextTestRunner(verbosity=1).run(s); sys.exit(not r.wasSuccessful())"

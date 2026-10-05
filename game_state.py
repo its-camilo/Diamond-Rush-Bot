@@ -23,8 +23,10 @@ class GameState:
         self.game_state = game_state
         self.action_history = list(action_history) if action_history is not None else []
         self.check_objects_in_grid()
-        # Las acciones van en orden de peso
-        self.actions = ["go_ladder", "get_key", "open_door", "get_diamond", "push_rock", "shove_rock", "go_spike"]
+        # Las acciones van en orden de peso. go_button (Valentina 'B') va antes
+        # que go_spike: pisar el boton abre la salida y no mata. go_explore es
+        # red de seguridad post-botin (Nivel 2 sin salida visible).
+        self.actions = ["go_ladder", "get_key", "open_door", "get_diamond", "push_rock", "shove_rock", "go_button", "go_explore", "go_spike"]
         self.alternative_stack: list[tuple[str, tuple[int, int], list]] = []  # Lista de tuplas (action_type, coordinates, path)
 
         # Correccion 3 (stuck detector): objetivos penalizados con peso
@@ -33,10 +35,11 @@ class GameState:
     
     def check_objects_in_grid(self):
         doorExists, keyExists, diamondExists, rockExists = False, False, False, False
+        buttonExists = False
         for row in self.grid:
             for cell in row:
                 if cell != None:
-                    if cell.cell_type == "door":
+                    if cell.cell_type in ("door", "metal-door"):
                         doorExists = True
                     elif cell.cell_type == "key":
                         keyExists = True
@@ -44,7 +47,10 @@ class GameState:
                         diamondExists = True
                     elif cell.cell_type == "rock":
                         rockExists = True
+                    elif cell.cell_type in ("button", "push_button", "push-button"):
+                        buttonExists = True
         self.doorExist, self.keyExist, self.diamondExist, self.rockExist = doorExists, keyExists, diamondExists, rockExists
+        self.buttonExist = buttonExists
 
     def _astar_path(self, start, goal):
         # Principio Valentina: los caminos a diamante/llave/escalera no pueden
@@ -276,6 +282,138 @@ class GameState:
             return self.find_nearest_key()
         return best, path
 
+    def find_nearest_button(self):
+        """Boton mas cercano (Valentina 'B'): pisarlo abre la salida.
+
+        Los botones son transitables (peso 2), asi que A* los alcanza sin
+        limpiar pinchos extra. Solo se usa cuando ya no hay diamantes ni
+        llaves pendientes: es exploracion post-botín, no botín.
+        """
+        best = None
+        best_score = float("inf")
+        path = None
+        for row in self.grid:
+            for cell in row:
+                if cell is not None and cell.cell_type in ("button", "push_button", "push-button"):
+                    coord = (int(cell.coordinates[0]), int(cell.coordinates[1]))
+                    if self._failed("go_button", coord):
+                        continue
+                    Astar = self._astar_path(self.player_pos, cell.coordinates)
+                    if (Astar.total_weight < best_score
+                            and self._astar_reachable(self.player_pos, cell.coordinates, Astar)):
+                        best_score = Astar.total_weight
+                        best = cell
+                        path = Astar.directions
+        return best, path
+
+    def _safe_loot_reachable(self):
+        """¿Hay diamante o llave alcanzable ahora mismo?
+
+        Guardia anti-pinchos (Nivel spikes Imagen 1, logica Seb original):
+        con botin seguro a la vista jamas se pisa un pincho. Las
+        alternativas go_spike guardadas de un estado viejo (sin botin) se
+        descartan al reventar contra botin fresco en vez de desviar al bot.
+        """
+        try:
+            if self.diamondExist:
+                best, path = self.find_nearest_diamond()
+                if best is not None and path:
+                    return True
+            if self.keyExist and not self.player_has_key:
+                best, path = self.find_assigned_key()
+                if best is not None and path:
+                    return True
+        except Exception:
+            pass
+        return False
+
+    def find_nearest_frontier(self):
+        """Exploracion post-botin: celda segura junto a lo desconocido.
+
+        Solo se usa cuando ya no hay diamantes/llaves/rocas/botones ni
+        pinchos vivos ni salida visible (Nivel 2 tras el diamante con la
+        salida aun tapada por vision). Mueve al borde del mapa conocido para
+        revelar la escalera/boton en la proxima captura en vez de quedarse
+        quieto. Nunca pisa fosos/pinchos/rocas/puertas.
+        """
+        try:
+            if self.diamondExist or self.keyExist or self.rockExist or self.buttonExist:
+                return None, None
+            spikes = sum(1 for row in self.grid for c in row
+                         if c is not None and c.cell_type == "spike")
+            if spikes:
+                return None, None
+            reachable = self._bfs_reachable_cells(self.grid, self.player_pos, set())
+            if not reachable:
+                return None, None
+            rows = len(self.grid)
+            cols = len(self.grid[0]) if rows else 0
+            interesting = {"fall", "button", "push_button", "push-button",
+                           "metal-door", "door", "ladder", "ladder-open"}
+            best = None
+            best_path = None
+            best_score = float("inf")
+            start = (int(self.player_pos[0]), int(self.player_pos[1]))
+            for (r, c) in reachable:
+                if (r, c) == start:
+                    continue
+                if self._failed("go_explore", (r, c)):
+                    continue
+                # Frontera util: junto a foso/boton/puerta/salida (no a None:
+                # el None local haria rebotar (9,5)<->(8,5) 200 pasos).
+                is_frontier = False
+                for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                    nr, nc = r + dr, c + dc
+                    if not (0 <= nr < rows and 0 <= nc < cols):
+                        continue
+                    nb = self.grid[nr][nc]
+                    if nb is not None and nb.cell_type in interesting:
+                        is_frontier = True
+                        break
+                if not is_frontier:
+                    continue
+                Astar = self._astar_path(self.player_pos, (r, c))
+                if not self._astar_reachable(self.player_pos, (r, c), Astar):
+                    continue
+                if Astar.total_weight < best_score:
+                    best_score = Astar.total_weight
+                    best = (r, c)
+                    best_path = Astar.directions
+            if best is None:
+                return None, None
+            from cell import Cell as _Cell
+            # Celda virtual: no existe en el grid, solo lleva coordenadas.
+            probe = _Cell(list(best), "terrain")
+            return probe, best_path
+        except (TypeError, ValueError, IndexError, AttributeError):
+            return None, None
+
+    def _is_spike_corridor(self):
+        """Nivel 2 (corredor de pinchos): 1 diamante tras pinchos verticales,
+        sin escalera/llave/puerta/roca visible y con foso.
+
+        Logica separada por nivel (pedido): aqui Seb cruzaba pinchos por peso
+        y Valentina iba al goal; nosotros limpiamos pinchos en orden y luego
+        exploramos el boton/salida en vez de quedarnos quietos.
+        """
+        try:
+            if self.exit_cells() or self.keyExist or self.doorExist or self.rockExist:
+                return False
+            if not self.diamondExist:
+                return False
+            spikes = [(int(c.coordinates[0]), int(c.coordinates[1]))
+                      for row in self.grid for c in row
+                      if c is not None and c.cell_type == "spike"]
+            falls = [c for row in self.grid for c in row
+                     if c is not None and c.cell_type == "fall"]
+            # Columna vertical de >=2 pinchos + foso = firma del corredor.
+            if len(spikes) < 2 or not falls:
+                return False
+            cols = [c for _, c in spikes]
+            return max(cols) - min(cols) <= 1
+        except (TypeError, ValueError, AttributeError):
+            return False
+
     def get_possible_spikes(self) -> List[Tuple[int, int]]:
         possible_spikes = []
         visited : list = []
@@ -309,6 +447,8 @@ class GameState:
         return possible_spikes
     
     def get_possible_doors(self) -> List[Tuple[int, int]]:
+        # Puertas abribles: door y metal-door (la jaula del Nivel 2 es
+        # metal-door; antes se ignoraba y la jaula jamas se abria).
         possible_spikes = []
         visited : list = []
         queue = deque()
@@ -324,7 +464,7 @@ class GameState:
             visited.append(current_pos)
 
             # Si llegamos a un spike y no hemos visto otros antes, es válido
-            if current_cell.cell_type == "door":
+            if current_cell.cell_type in ("door", "metal-door"):
                 if len(spikes_seen) <= 1:
                     possible_spikes.append(current_pos)
                 continue  # no seguimos más allá del spike
@@ -334,7 +474,7 @@ class GameState:
                 if neighbor and neighbor.walkable:
                     new_pos = neighbor.coordinates
                     new_spikes = spikes_seen[:]
-                    if neighbor.cell_type == "door":
+                    if neighbor.cell_type in ("door", "metal-door"):
                         new_spikes.append(new_pos)
                     queue.append((new_pos, new_spikes))
 
@@ -849,7 +989,7 @@ class GameState:
             if alt_action == "get_diamond":
                 if not self.diamondExist:
                     continue
-            if alt_action in ("get_key", "get_diamond", "open_door", "go_spike"):
+            if alt_action in ("get_key", "get_diamond", "open_door", "go_spike", "go_button", "go_explore"):
                 if self._failed(alt_action, coords):
                     continue
                 # Correccion 1: alternativa con camino vacio = inalcanzable.
@@ -857,6 +997,32 @@ class GameState:
                     if not path and tuple(coords) != tuple(int(v) for v in self.player_pos):
                         continue
                 except (TypeError, ValueError):
+                    continue
+                # Alternativa rancia ( Seb heredado ): el path se calculo desde
+                # otra casilla y tras el backtrack ya no llega (caso fantasma
+                # (11,5)->(10,7) reutilizado desde (12,8) = (11,10)). Se
+                # descarta si al replay no termina en coords.
+                try:
+                    pos = [int(self.player_pos[0]), int(self.player_pos[1])]
+                    for step in (path or []):
+                        if step == "up":
+                            pos[0] -= 1
+                        elif step == "down":
+                            pos[0] += 1
+                        elif step == "left":
+                            pos[1] -= 1
+                        elif step == "right":
+                            pos[1] += 1
+                        else:
+                            raise ValueError(step)
+                    if tuple(pos) != (int(coords[0]), int(coords[1])):
+                        continue
+                except (TypeError, ValueError, IndexError):
+                    continue
+                # Con botin fresco a la vista, jamas desvio a un pincho viejo
+                # (Nivel spikes: con 13 diamantes alcanzables, limpiar pinchos
+                # mata/atrapa; Seb solo los cruzaba por peso sin rodeo).
+                if alt_action == "go_spike" and self._safe_loot_reachable():
                     continue
             return GameAction(alt_action, coordinates=coords, path=list(path) if path is not None else [])
 
@@ -929,6 +1095,27 @@ class GameState:
                         if simulations:
                             return simulations[0]
 
+                case "go_button":
+                    # Valentina 'B': tras el botin, pisar el boton abre la salida.
+                    # Solo cuando no hay diamantes/llaves/rocas pendientes para
+                    # no desviar el flujo normal (tests sin botones intactos).
+                    # Un solo uso por simulacion (no muta el grid: repetir seria
+                    # rebotar hasta max_steps).
+                    if self.buttonExist and not self.diamondExist and not self.keyExist and not self.rockExist:
+                        if not any(getattr(a, "action", "") == "go_button" for a in self.action_history):
+                            nearest, path = self.find_nearest_button()
+                            if nearest is not None and path:
+                                return GameAction(next_action, coordinates=nearest.coordinates, path=path)
+
+                case "go_explore":
+                    # Red post-botin (Nivel 2): sin botin ni pinchos ni salida,
+                    # un paso a la frontera en vez de quedarse quieto.
+                    # Un solo uso por simulacion (no muta el grid).
+                    if not any(getattr(a, "action", "") == "go_explore" for a in self.action_history):
+                        nearest, path = self.find_nearest_frontier()
+                        if nearest is not None and path:
+                            return GameAction(next_action, coordinates=nearest.coordinates, path=path)
+
                 case "go_spike":
                     vetoed = self._level6_upstream()
                     # Puente primero (guia Nivel 6 + barrera azul): sin
@@ -993,7 +1180,10 @@ class GameState:
         print(f"sin accion desde {list(self.player_pos)}: "
               f"llave={self.keyExist}/{self.player_has_key} "
               f"puerta={self.doorExist} diamante={self.diamondExist} "
-              f"roca={self.rockExist} upstream={self._level6_upstream()}")
+              f"roca={self.rockExist} boton={self.buttonExist} "
+              f"spikes={sum(1 for row in self.grid for c in row if c is not None and c.cell_type == 'spike')} "
+              f"salidas={self.exit_cells()} upstream={self._level6_upstream()} "
+              f"corredor2={self._is_spike_corridor()}")
         return GameAction("None", [0, 0], path=[])
 
 

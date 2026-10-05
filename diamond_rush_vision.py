@@ -319,6 +319,15 @@ class DiamondRushVision:
                             best_player = (name, template, max_val)
                         continue
                     if max_val >= thresh:
+                        # Remove any numbers from the end of the name
+                        clean_name = re.sub(r'\d+$', '', name)
+                        # HUD filas 0-2: la barra WALKTHROUGH/contador imita
+                        # llaves/diamantes/players (log: fila 0 toda key).
+                        # Nunca hay items reales ahi: ignorar sin marcar.
+                        if i < 3 and clean_name in ("key", "diamond", "player",
+                                                    "player-with-key", "ladder",
+                                                    "ladder-open"):
+                            continue
                         # Draw rectangle and label for detected object
                         cv2.rectangle(img_res, (cell_x, cell_y), 
                                      (cell_x + cell_w, cell_y + cell_h), 
@@ -328,8 +337,6 @@ class DiamondRushVision:
                                    cv2.FONT_HERSHEY_SIMPLEX, 0.35, 
                                    (0, 255, 0), 1)
                         
-                        # Remove any numbers from the end of the name
-                        clean_name = re.sub(r'\d+$', '', name)
                         if clean_name == "player-with-key":
                             # Verificar cyan real en el ROI: el player sin llave matchea
                             # el template con-key al 0.60 por parecido. Sin cyan -> player raso.
@@ -347,7 +354,10 @@ class DiamondRushVision:
                 
                 if best_player[0] is not None and not match_found:
                     pname, _, pscore = best_player
-                    if pscore >= 0.60:
+                    # HUD: jugador nunca en filas 0-2 (barra superior).
+                    if i < 3:
+                        pass
+                    elif pscore >= 0.60:
                         clean_p = re.sub(r'\d+$', '', pname)
                         if clean_p == "player-with-key":
                             import numpy as _np
@@ -452,6 +462,10 @@ class DiamondRushVision:
             self._override_diamonds_full_image(img, img_res, grid, rows, cols)
         except Exception as e:
             print(f"diamond override omitido: {e}")
+        try:
+            self._override_falls_doors_buttons_full_image(img, img_res, grid, rows, cols)
+        except Exception as e:
+            print(f"fall/door/button override omitido: {e}")
         # Rescate del jugador: si esta parado sobre llave/diamante, el match por
         # celda lo clasifica como key/diamond (las keys van primero) y el player
         # desaparece -> "No se pudo encontrar la posicion" en bucle. El
@@ -533,10 +547,22 @@ class DiamondRushVision:
                 continue
             if 0 <= i < rows and 0 <= j < cols and (i, j) not in seen:
                 seen.add((i, j))
+                cur = grid[i][j]
                 if (i, j) in self.suppressed_cells:
                     suppressed += 1
                     continue
-                cur = grid[i][j]
+                # Nivel 3 / resto: con player-with-key ya en mano no inventar
+                # llaves fantasmas (evita that open_door bucle infinito).
+                has_pwk = any(
+                    c is not None and c.cell_type == "player-with-key"
+                    for row in grid for c in row)
+                # Si la celda existente es una llave REAL ya recogida (en
+                # suppressed) o es terrain/diamond, permitir override; si
+                # es terrain y hay pwk, el sprite cercano es parte del player.
+                if has_pwk and cur is not None and cur.cell_type == "key" \
+                        and (i, j) not in self.suppressed_cells:
+                    # Confirmar score antes de confiar; si no pasa, salta.
+                    pass  # sigue a validacion por celda
                 if cur is None or cur.cell_type in ("terrain", "diamond"):
                     try:
                         ch = int(self.cell_height)
@@ -625,6 +651,89 @@ class DiamondRushVision:
                     print(f"Diamante recuperado por full-image en ({i},{j})")
         if suppressed:
             print(f"Diamond override suprimido en {suppressed} celda(s) ya recogida(s)")
+
+    def _override_generic_full_image(self, img, img_res, grid, rows, cols,
+                                     template_name, target_type,
+                                     allowed=("terrain", None),
+                                     full_thresh=0.65, cell_thresh=0.40, label=None):
+        """Override full-image generico (Nivel 2: fosos/jaula/boton perdidos).
+
+        Solo rellena celdas `allowed` (nunca pisa player/key/diamond/rock salvo
+        que se pida) con doble validacion full-image + por-celda, igual que
+        llaves/diamantes. Asi la lava que quedaba en None y la jaula que
+        quedaba en terrain vuelven al grid sin crear fantasmas.
+        """
+        import numpy as np
+        x1, y1, x2, y2 = self.game_rectangle
+        crop = img[y1:y2, x1:x2]
+        if crop is None or crop.size == 0:
+            return
+        template = self.templates_raw.get(template_name)
+        if template is None:
+            return
+        res = cv2.matchTemplate(crop, template, cv2.TM_CCOEFF_NORMED)
+        ys, xs = np.where(res >= full_thresh)
+        seen = set()
+        for yy, xx in zip(ys.tolist(), xs.tolist()):
+            cx = x1 + xx + template.shape[1] // 2
+            cy = y1 + yy + template.shape[0] // 2
+            j = int(round((cx - self.game_rectangle[0]) / self.cell_width - 0.5))
+            i = int(round((cy - self.game_rectangle[1]) / self.cell_height - 0.5))
+            if i < 3:
+                continue
+            if 0 <= i < rows and 0 <= j < cols and (i, j) not in seen:
+                seen.add((i, j))
+                cur = grid[i][j]
+                cur_type = cur.cell_type if cur is not None else None
+                if cur_type not in allowed:
+                    continue
+                try:
+                    ch = int(self.cell_height)
+                    cw = int(self.cell_width)
+                    roi = img[int(y1 + i * ch):int(y1 + (i + 1) * ch),
+                              int(x1 + j * cw):int(x1 + (j + 1) * cw)]
+                    rr = cv2.matchTemplate(roi, template, cv2.TM_CCOEFF_NORMED)
+                    _, cell_score, _, _ = cv2.minMaxLoc(rr)
+                except Exception:
+                    continue
+                if cell_score < cell_thresh:
+                    continue
+                cell_x = int(self.game_rectangle[0] + j * self.cell_width)
+                cell_y = int(self.game_rectangle[1] + i * self.cell_height)
+                cell_w = int(self.cell_width)
+                cell_h = int(self.cell_height)
+                cv2.rectangle(img_res, (cell_x, cell_y),
+                              (cell_x + cell_w, cell_y + cell_h),
+                              (0, 255, 0), 2)
+                cv2.putText(img_res, label or f"{target_type}-Full",
+                            (cell_x, cell_y + 12),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.35,
+                            (0, 255, 0), 1)
+                from cell import Cell as _Cell
+                grid[i][j] = _Cell(cell_type=target_type, coordinates=[i, j])
+                print(f"{target_type} recuperado por full-image en ({i},{j})")
+
+    def _override_falls_doors_buttons_full_image(self, img, img_res, grid, rows, cols):
+        """Recupera fosos y jaulas perdidos (quedaban None/terrain).
+
+        Sin override de push_button: el template marron casa con el terreno
+        y creo 26 botones fantasma en vivo que mandaban go_button a paredes.
+        El boton real lo detecta el match directo (0.80); post-botin cubre
+        go_explore.
+        """
+        # Fosos: solo None (la lava nunca es terrain real).
+        self._override_generic_full_image(img, img_res, grid, rows, cols,
+                                          "fall", "fall", allowed=(None,),
+                                          full_thresh=0.65, cell_thresh=0.40)
+        # Jaula metal-door: suele quedar como terrain.
+        self._override_generic_full_image(img, img_res, grid, rows, cols,
+                                          "metal-door", "metal-door",
+                                          allowed=("terrain", None),
+                                          full_thresh=0.65, cell_thresh=0.40)
+        self._override_generic_full_image(img, img_res, grid, rows, cols,
+                                          "door", "door",
+                                          allowed=("terrain", None),
+                                          full_thresh=0.65, cell_thresh=0.40)
 
     @staticmethod
     def should_rescue_player(current_type, player_score, threshold=0.60):

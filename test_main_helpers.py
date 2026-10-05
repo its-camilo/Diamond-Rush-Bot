@@ -7,13 +7,14 @@ perdido. El click de foco + el veto solo-tras-repeticion lo cubren.
 import unittest
 
 from game_action import GameAction
+from record_route import format_sequence
 from main import (DEBUG_SHOW_IMAGE, detect_stuck, focus_center,
                   register_repeat, resolve_held_key)
 
 
 class DebugModeTests(unittest.TestCase):
-    def test_debug_window_off(self):
-        # Sin ventana Resultado el juego conserva el foco y los inputs llegan.
+    def test_debug_window_off_by_default(self):
+        # Juego autónomo por defecto; para supervisar: DIAMOND_DEBUG=1.
         self.assertFalse(DEBUG_SHOW_IMAGE)
 
 
@@ -57,6 +58,22 @@ class StuckKeyTests(unittest.TestCase):
         acted = GameAction("get_key", [13, 4], path=["down", "left"])
         self.assertFalse(detect_stuck([12, 8], [13, 4], acted))
         self.assertTrue(resolve_held_key(False, False, acted, True))
+
+
+class RouteRecorderTests(unittest.TestCase):
+    def test_compacts_arrow_events_into_route_groups(self):
+        events = [
+            {"direction": "up"}, {"direction": "up"},
+            {"direction": "left"}, {"direction": "down"},
+            {"direction": "down"}, {"direction": "down"},
+            {"direction": "right"},
+        ]
+
+        self.assertEqual(format_sequence(events), "UU L DDD R")
+
+    def test_empty_or_non_arrow_events_are_ignored(self):
+        self.assertEqual(format_sequence([]), "")
+        self.assertEqual(format_sequence([{"direction": "space"}]), "")
 
 
 if __name__ == "__main__":

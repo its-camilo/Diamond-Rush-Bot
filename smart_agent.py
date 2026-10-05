@@ -86,16 +86,21 @@ class SmartAgent:
         best_partial = None
         best_score = 0
         def _useful(st):
+            # Progreso parcial: el diamante vale +2 aunque cueste pinchos.
+            # go_spike puntua 0 (antes -1): limpiar el corredor del Nivel 2
+            # para llegar al diamante es progreso, no perdida (con -1 el parcial
+            # 3xspike+diamante daba -1 y se descartaba -> quieto para siempre).
+            # go_button +1: pisar el boton post-botin abre la salida.
             try:
                 score = 0
                 for ac in st.action_history:
                     act = getattr(ac, "action", "")
                     if act in ("get_diamond", "get_key", "open_door"):
                         score += 2
-                    elif act == "push_rock":
+                    elif act in ("push_rock", "go_button", "go_explore"):
                         score += 1
                     elif act == "go_spike":
-                        score -= 1
+                        score += 0
                 return score
             except Exception:
                 return -1
@@ -109,7 +114,8 @@ class SmartAgent:
                 print("Limite de simulacion alcanzado, devuelvo mejor estado")
                 break
             if (simulated_action.action in ("get_diamond", "get_key", "open_door",
-                                             "go_spike", "go_ladder")
+                                              "go_spike", "go_ladder", "go_button",
+                                              "go_explore")
                     and _is_teleport(simulated_action, simulated_game_state.player_pos)):
                 print(f"Objetivo inalcanzable (camino vacio): {simulated_action.action} "
                       f"{simulated_action.coordinates}, backtrack")
@@ -348,6 +354,27 @@ class SmartAgent:
 
                     simulated_game_state = next_state
                     print("Llego a nuevo estado go spike")
+                case "go_button":
+                    # Pisar boton (Valentina 'B'): mueve al jugador, el boton
+                    # queda (abre puertas/salida en el juego real).
+                    next_state: GameState = simulated_game_state.clone()
+                    next_state.game_state += 1
+                    next_state.player_pos = simulated_action.coordinates
+                    next_state.action_history.append(simulated_action)
+                    next_state.check_objects_in_grid()
+                    state_stack.append(next_state)
+                    simulated_game_state = next_state
+                    print("Llego a nuevo estado go button")
+                case "go_explore":
+                    # Frontera segura: mueve al jugador sin mutar el grid.
+                    next_state: GameState = simulated_game_state.clone()
+                    next_state.game_state += 1
+                    next_state.player_pos = simulated_action.coordinates
+                    next_state.action_history.append(simulated_action)
+                    next_state.check_objects_in_grid()
+                    state_stack.append(next_state)
+                    simulated_game_state = next_state
+                    print("Llego a nuevo estado go explore")
                 case "go_ladder":
                     next_state : GameState = simulated_game_state.clone()
                     next_state.game_state += 1
