@@ -1589,5 +1589,24 @@ class Level16CapturedRouteTests(unittest.TestCase):
         self.assertEqual(route.next_action(grid, (6, 1)).path, ["down"] * 4)
 
 
+
+class RouteSignatureCollisionTests(unittest.TestCase):
+    def test_open_cage_at_13_8_does_not_trigger_level9(self):
+        grid = Level10CapturedRouteTests._grid((6, 8))
+        for pos in ((8, 2), (8, 7)):
+            grid[pos[0]][pos[1]] = Cell(pos, "terrain")
+        for pos in ((13, 5), (13, 6), (13, 7)):
+            grid[pos[0]][pos[1]] = Cell(pos, "fall")
+        grid[13][8] = Cell((13, 8), "ladder-open")
+        # el Nivel 16 con la jaula abierta ya no debe leerse como Nivel 9
+        self.assertTrue(is_level16_captured_route(grid))
+        grid9 = Level10CapturedRouteTests._grid((6, 8))
+        grid9[13][8] = Cell((13, 8), "ladder-open")
+        for r in range(1, 14):
+            for c in (1, 2, 3):
+                grid9[r][c] = None
+        self.assertFalse(is_level9_captured_route(grid9))
+
+
 if __name__ == "__main__":
     unittest.main()

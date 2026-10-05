@@ -212,6 +212,7 @@ def main():
             "level6_captured" if is_level6_captured_route(first_grid)
             else "level7_captured" if is_level7_captured_route(first_grid)
             else "level8_captured" if is_level8_captured_route(first_grid)
+            else "level16_captured" if is_level16_captured_route(first_grid)
             else "level9_captured" if is_level9_captured_route(first_grid)
             else "level10_captured" if is_level10_captured_route(first_grid)
             else "level11_captured" if is_level11_captured_route(first_grid)
@@ -219,7 +220,6 @@ def main():
             else "level13_captured" if is_level13_captured_route(first_grid)
             else "level14_captured" if is_level14_captured_route(first_grid)
             else "level15_captured" if is_level15_captured_route(first_grid)
-            else "level16_captured" if is_level16_captured_route(first_grid)
             else "five_rock" if is_five_rock_level(first_grid)
             else None
         )

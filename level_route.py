@@ -359,7 +359,10 @@ def is_level9_captured_route(grid):
             for row in grid for cell in row):
         return False
     if _cell_type(grid, (13, 8)) in ("ladder", "ladder-open"):
-        return True
+        # La escalera sola es ambigua (otros niveles tambien la tienen):
+        # exigir ademas el patron de terreno de la ruta del Nivel 9.
+        return _terrain_fits(grid, LEVEL9_CAPTURE_START,
+                             LEVEL9_CAPTURE_DIRECTIONS, 0.95)
     buttons = sum(_cell_type(grid, p) in (
         "push_button", "push-button", "rock-in-button")
         for p in ((5, 1), (7, 8), (12, 5)))
