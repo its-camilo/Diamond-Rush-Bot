@@ -14,7 +14,8 @@ from level_route import (FiveRockLevelRoute, Level6CapturedRoute,
                          Level10CapturedRoute, is_level10_captured_route,
                          Level11CapturedRoute, is_level11_captured_route,
                          Level12CapturedRoute, is_level12_captured_route,
-                         Level13CapturedRoute, is_level13_captured_route)
+                         Level13CapturedRoute, is_level13_captured_route,
+                         Level14CapturedRoute, is_level14_captured_route)
 
 
 def make_level_four_grid():
@@ -1546,6 +1547,19 @@ class Level13CapturedRouteTests(unittest.TestCase):
         self.assertFalse(is_level13_captured_route(make_new_level_grid()))
         route = Level13CapturedRoute(grid, (12, 4))
         self.assertEqual(route.next_action(grid, (12, 4)).path, ["left"])
+
+
+
+class Level14CapturedRouteTests(unittest.TestCase):
+    def test_signature_door_buttons_and_first_group(self):
+        grid = Level10CapturedRouteTests._grid((13, 4))
+        grid[10][2] = Cell((10, 2), "door")
+        grid[11][1] = Cell((11, 1), "push_button")
+        grid[11][4] = Cell((11, 4), "push_button")
+        self.assertTrue(is_level14_captured_route(grid))
+        self.assertFalse(is_level14_captured_route(make_new_level_grid()))
+        route = Level14CapturedRoute(grid, (13, 4))
+        self.assertEqual(route.next_action(grid, (13, 4)).path, ["up"])
 
 
 if __name__ == "__main__":

@@ -90,6 +90,13 @@ LEVEL13_CAPTURE_GROUPS = tuple(
     "RRRRRRR LL DD L D U LL DD RRR DDD RR".split())
 LEVEL13_CAPTURE_DIRECTIONS = tuple(
     step for group in LEVEL13_CAPTURE_GROUPS for step in group)
+LEVEL14_CAPTURE_START = (13, 4)
+LEVEL14_CAPTURE_GROUPS = tuple(
+    ("U R U RRR D U L UU L U D L RR DD LL D LLL UUUU R D L DDD RRR U RR UU R "
+     "UUU L UUU R D L DD R DDD LL U R D R U D L DD LLLLL UUU R UU R LLL U R "
+     "UU RR D").split())
+LEVEL14_CAPTURE_DIRECTIONS = tuple(
+    step for group in LEVEL14_CAPTURE_GROUPS for step in group)
 LEVEL7_CAPTURE_START = (4, 2)
 LEVEL7_CAPTURE_GROUPS = (
     "R", "U", "R", "DDDD", "L", "D", "LL", "DDDD", "UU", "RRRRRR",
@@ -352,6 +359,26 @@ def _terrain_fits(grid, start, directions, minimum=0.85):
     cells = route_positions(start, directions)
     ok = sum(_cell_type(grid, p) is not None for p in cells)
     return ok / len(cells) >= minimum
+
+
+def is_level14_captured_route(grid):
+    """Trapdoor/key level: door (10,2), trampillas (8,4),(11,1),(11,4),(7,8),
+    inicio (13,4). Firma = puerta + >=2 trampillas + patron de terreno."""
+    if not grid or len(grid) != 15 or len(grid[0]) != 10:
+        return False
+    if _cell_type(grid, (10, 2)) not in ("door", "metal-door"):
+        return False
+    buttons = sum(_cell_type(grid, p) in (
+        "push_button", "push-button", "rock-in-button")
+        for p in ((8, 4), (11, 1), (11, 4), (7, 8)))
+    if buttons < 2:
+        return False
+    if not any(c is not None and c.cell_type in (
+            "player", "player-with-key", "player-with-key1", "player-with-key2")
+            for row in grid for c in row):
+        return False
+    return _terrain_fits(grid, LEVEL14_CAPTURE_START,
+                         LEVEL14_CAPTURE_DIRECTIONS)
 
 
 def is_level13_captured_route(grid):
@@ -843,6 +870,22 @@ class Level13CapturedRoute(FiveRockLevelRoute):
             grid, player_pos, has_key,
             route_start=LEVEL13_CAPTURE_START,
             route_groups=LEVEL13_CAPTURE_GROUPS,
+            diamond_route_index={},
+            simulate_map=True,
+        )
+
+
+class Level14CapturedRoute(FiveRockLevelRoute):
+    """Rigid route recorded manually for the trapdoor/key level #3."""
+
+    kind = "level14_captured"
+    rigid = True
+
+    def __init__(self, grid, player_pos, has_key=False):
+        super().__init__(
+            grid, player_pos, has_key,
+            route_start=LEVEL14_CAPTURE_START,
+            route_groups=LEVEL14_CAPTURE_GROUPS,
             diamond_route_index={},
             simulate_map=True,
         )
