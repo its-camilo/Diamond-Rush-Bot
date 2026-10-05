@@ -8,7 +8,7 @@ recaptura).
 ## Estado actual
 
 - Niveles 1-5 (incluidos spikes y rocas/fosos): superados.
-- Niveles 6 a 9: **rutas pregrabadas** a mano con `record_route.py`. Cada una
+- Niveles 6 a 16: **rutas pregrabadas** a mano con `record_route.py`. Cada una
   es un guion r?gido que se ejecuta un tramo por captura (closed-loop) y se
   activa por la firma del mapa (ver tabla). El planner general ya no interviene
   mientras la ruta sigue viva.
@@ -32,7 +32,7 @@ recaptura).
 | 15 (llave/puerta) | puerta `(4,2)` o reja `(12,3)` + terreno | `(6,1)` | `RRR DDDD RRRR UU L U L UUUU R L DDDDD RR DD LL D U RR UU LL UUUUU LL DDD LLL DDD R DD L D RRRRRR L UU RR UU LLLL UU LL UUU L` |
 | 16 (lava/fosos) | fosos `(13,5),(13,6),(13,7)` + terreno | `(6,1)` | ver `LEVEL16_CAPTURE_GROUPS` en `level_route.py` |
 
-Las firmas de los niveles 7 y 10-12 comprueban adem?s el patr?n de terreno (`_terrain_fits`: >=85% de las celdas de la ruta deben existir en el mapa). La lava del Nivel 12 a?n no la modela el simulador (rocas a la lava).
+Las firmas de los niveles 7 y 10-16 comprueban adem?s el patr?n de terreno (`_terrain_fits`: >=85% de las celdas de la ruta deben existir en el mapa). El Nivel 8 queda fuera (el HUD vac?a las filas 0-2). La lava del Nivel 12 y 16 no la modela el simulador (rocas a la lava); las rutas grabadas no entran en ella.
 
 Trampillas (`push_button`): con peso encima (roca o jugador) abren rejas
 (`metal-door`). Una roca sobre una trampilla se sigue empujando. El simulador
@@ -85,7 +85,7 @@ marcas de tiempo, duración de cada pulsación y una secuencia compacta como
 `UUU R UUUU`. Comparte esa secuencia (y, si hace falta, el JSON) para añadirla
 como flujo específico del nivel.
 
-## Tests (119, todos offline, sin navegador)
+## Tests (120, todos offline, sin navegador)
 
 ```powershell
 python -c "import sys; sys.path.insert(0, '.'); import unittest; s=unittest.defaultTestLoader.loadTestsFromNames(['test_level6_guide','test_rock_simulation','test_vision_spikes','test_main_helpers']); r=unittest.TextTestRunner(verbosity=1).run(s); sys.exit(not r.wasSuccessful())"

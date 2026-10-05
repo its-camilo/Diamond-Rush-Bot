@@ -39,9 +39,9 @@ cambia: el clon debe completar solo todos los niveles de Diamond Rush.
   UUU RRRRRR DD L DD LLLLLL DD RRRRRRR UU LLLLLL UUUU RRR DD L`.
   La ruta es rígida y recaptura entre cada grupo; mientras está activa no cae
   al planner greedy.
-- Niveles 7 a 10 tambi?n son rutas r?gidas grabadas (`Level7-11CapturedRoute`,
+- Niveles 7 a 16 tambi?n son rutas r?gidas grabadas (`Level7-16CapturedRoute`,
   detectores `is_level7/8/9_captured_route`; secuencias en README). Orden de
-  detecci?n en `main.py`: 6, 7, 8, 9, cinco rocas. Nivel 7: fosos
+  detecci?n en `main.py`: 6, 7, 8, 16, 9, 10-15, cinco rocas. Nivel 7: fosos
   `(7,4),(10,1),(10,7)`, inicio `(4,2)` (solo se reengancha sobre la ruta).
   Nivel 8 (`open_hud=True`): fosos `(9,2),(12,2)`, inicio `(7,5)`, acepta
   cualquier posici?n del jugador. Nivel 9: firma = escalera `(13,8)` o trampillas
@@ -57,6 +57,19 @@ cambia: el clon debe completar solo todos los niveles de Diamond Rush.
   tramo en vuelo, o el waypoint actual si no hay tramo) y se marca ah? al
   jugador para continuar. Filas 0-2 quedan vac?as por el HUD; con `open_hud`
   el simulador las cruza (columnas 2-7).
+- Niveles 12-16 (`is_level12..16_captured_route`): firmas = elementos fijos
+  (puerta `(5,3)`; puertas `(4,6)+(11,1)`; puerta `(10,2)`+trampillas; puerta
+  `(4,2)`/reja `(12,3)`; fosos `(13,5..7)`) + `_terrain_fits` (>=85% de las
+  celdas de la ruta existen). Inicios: 12 `(3,3)`, 13 `(12,4)`, 14 `(13,4)`,
+  15 `(6,1)`, 16 `(6,1)`. Secuencias en README / `LEVELn_CAPTURE_GROUPS`.
+- Colisi?n de firmas: la jaula abierta crea `ladder-open` en `(13,8)` (Nivel 16)
+  y chocaba con la firma del Nivel 9; por eso el 16 se eval?a antes y la
+  escalera del 9 exige `_terrain_fits(...,0.95)`. Al a?adir un nivel nuevo,
+  revisar que su firma no coincida con el estado final de otro (escaleras).
+- Coordenadas de rutas: derivar el inicio del `Grid resumen: jugador=[r,c]`
+  del log, NO de la captura de pantalla (se desfas? una columna en el Nivel 12).
+- Rigid sin salida: si la ruta no halla paso seguro, recaptura sin fin
+  ("Ruta r?gida sin paso seguro"); no hay timeout. Pendiente.
 - Barrera azul (`LEVEL6_ROCK_CORRIDOR`): la roca solo ocupa el ducto + rodeo
   por columna 3. Sin shoves en Nivel 6. `_orphans_fill` veta el shove que mata
   el único fill futuro (caso `(4,2)->(4,1)`).
@@ -112,6 +125,8 @@ cambia: el clon debe completar solo todos los niveles de Diamond Rush.
 
 ## Pendiente (orden sugerido)
 
+- Validar en vivo niveles 6-16 tras cada cambio de firma; a?adir Nivel 17+
+  con `record_route.py` (ver README). Modelar lava y trampillas por reja.
 1. Validar en vivo el final del Nivel 6 (puerta `(8,5)` + jaula `(9,4)`).
 2. Entender la parálisis de `(9,8)`: el planner offline sí halla
    `get_diamond (11,3)` en el mapa ralo; en vivo devolvió `None`. El print
