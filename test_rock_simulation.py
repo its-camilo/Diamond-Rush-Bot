@@ -1,4 +1,4 @@
-﻿import unittest
+import unittest
 
 from cell import Cell
 from game_state import GameState
@@ -1520,14 +1520,14 @@ class Level11CapturedRouteTests(unittest.TestCase):
 
 class Level12CapturedRouteTests(unittest.TestCase):
     def test_signature_needs_door_and_terrain_pattern(self):
-        grid = Level10CapturedRouteTests._grid((3, 2))
+        grid = Level10CapturedRouteTests._grid((3, 3))
         grid[5][3] = Cell((5, 3), "door")
         self.assertTrue(is_level12_captured_route(grid))
-        route = Level12CapturedRoute(grid, (3, 2))
-        self.assertEqual(route.next_action(grid, (3, 2)).path, ["left"])
+        route = Level12CapturedRoute(grid, (3, 3))
+        self.assertEqual(route.next_action(grid, (3, 3)).path, ["left"])
         # sin patron de terreno (mapa casi vacio) no es el nivel
         empty = [[None] * 10 for _ in range(15)]
-        empty[3][2] = Cell((3, 2), "player")
+        empty[3][3] = Cell((3, 3), "player")
         empty[5][3] = Cell((5, 3), "door")
         self.assertFalse(is_level12_captured_route(empty))
         self.assertFalse(is_level12_captured_route(make_new_level_grid()))
