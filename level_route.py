@@ -84,6 +84,12 @@ LEVEL12_CAPTURE_GROUPS = tuple(
     "UUU L R U RR D RRRR DDDDDD".split())
 LEVEL12_CAPTURE_DIRECTIONS = tuple(
     step for group in LEVEL12_CAPTURE_GROUPS for step in group)
+LEVEL13_CAPTURE_START = (12, 4)
+LEVEL13_CAPTURE_GROUPS = tuple(
+    "L RRRR LLLL UUUUU LL U DDDDDD RRRRR UU L U R UU RR UU LLLLL UU LL D U "
+    "RRRRRRR LL DD L D U LL DD RRR DDD RR".split())
+LEVEL13_CAPTURE_DIRECTIONS = tuple(
+    step for group in LEVEL13_CAPTURE_GROUPS for step in group)
 LEVEL7_CAPTURE_START = (4, 2)
 LEVEL7_CAPTURE_GROUPS = (
     "R", "U", "R", "DDDD", "L", "D", "LL", "DDDD", "UU", "RRRRRR",
@@ -346,6 +352,22 @@ def _terrain_fits(grid, start, directions, minimum=0.85):
     cells = route_positions(start, directions)
     ok = sum(_cell_type(grid, p) is not None for p in cells)
     return ok / len(cells) >= minimum
+
+
+def is_level13_captured_route(grid):
+    """Two-door level: doors (4,6) y (11,1), start (12,4). Firma = ambas
+    puertas + patron de terreno de la ruta."""
+    if not grid or len(grid) != 15 or len(grid[0]) != 10:
+        return False
+    if sum(_cell_type(grid, p) in ("door", "metal-door")
+           for p in ((4, 6), (11, 1))) < 2:
+        return False
+    if not any(c is not None and c.cell_type in (
+            "player", "player-with-key", "player-with-key1", "player-with-key2")
+            for row in grid for c in row):
+        return False
+    return _terrain_fits(grid, LEVEL13_CAPTURE_START,
+                         LEVEL13_CAPTURE_DIRECTIONS)
 
 
 def is_level12_captured_route(grid):
@@ -805,6 +827,22 @@ class Level12CapturedRoute(FiveRockLevelRoute):
             grid, player_pos, has_key,
             route_start=LEVEL12_CAPTURE_START,
             route_groups=LEVEL12_CAPTURE_GROUPS,
+            diamond_route_index={},
+            simulate_map=True,
+        )
+
+
+class Level13CapturedRoute(FiveRockLevelRoute):
+    """Rigid route recorded manually for the two-door level."""
+
+    kind = "level13_captured"
+    rigid = True
+
+    def __init__(self, grid, player_pos, has_key=False):
+        super().__init__(
+            grid, player_pos, has_key,
+            route_start=LEVEL13_CAPTURE_START,
+            route_groups=LEVEL13_CAPTURE_GROUPS,
             diamond_route_index={},
             simulate_map=True,
         )
