@@ -103,6 +103,13 @@ LEVEL15_CAPTURE_GROUPS = tuple(
      "DDD LLL DDD R DD L D RRRRRR L UU RR UU LLLL UU LL UUU L").split())
 LEVEL15_CAPTURE_DIRECTIONS = tuple(
     step for group in LEVEL15_CAPTURE_GROUPS for step in group)
+LEVEL16_CAPTURE_START = (6, 1)
+LEVEL16_CAPTURE_GROUPS = tuple(
+    ("DDDD RRR U R L DDD L R U RRRR UUUUU D LL DDD UUU RR DDDD LLL R UU LL "
+     "DDD L D R UUU LLL UUUU RR DDD UUU LL DDDD RR U R DDD L D RR L UUUU RR "
+     "UU LL RR DD LLL D LL UUUU RR DDD UUU LL DDDD RR U R DDD L D RRRRR").split())
+LEVEL16_CAPTURE_DIRECTIONS = tuple(
+    step for group in LEVEL16_CAPTURE_GROUPS for step in group)
 LEVEL7_CAPTURE_START = (4, 2)
 LEVEL7_CAPTURE_GROUPS = (
     "R", "U", "R", "DDDD", "L", "D", "LL", "DDDD", "UU", "RRRRRR",
@@ -365,6 +372,22 @@ def _terrain_fits(grid, start, directions, minimum=0.85):
     cells = route_positions(start, directions)
     ok = sum(_cell_type(grid, p) is not None for p in cells)
     return ok / len(cells) >= minimum
+
+
+def is_level16_captured_route(grid):
+    """Lava/pit level: pits (13,5),(13,6),(13,7), cage (13,8), start (6,1).
+    Firma = >=2 fosos + patron de terreno de la ruta."""
+    if not grid or len(grid) != 15 or len(grid[0]) != 10:
+        return False
+    if sum(_cell_type(grid, p) in ("fall", "rock-in-fall")
+           for p in ((13, 5), (13, 6), (13, 7))) < 2:
+        return False
+    if not any(c is not None and c.cell_type in (
+            "player", "player-with-key", "player-with-key1", "player-with-key2")
+            for row in grid for c in row):
+        return False
+    return _terrain_fits(grid, LEVEL16_CAPTURE_START,
+                         LEVEL16_CAPTURE_DIRECTIONS)
 
 
 def is_level15_captured_route(grid):
@@ -924,6 +947,22 @@ class Level15CapturedRoute(FiveRockLevelRoute):
             grid, player_pos, has_key,
             route_start=LEVEL15_CAPTURE_START,
             route_groups=LEVEL15_CAPTURE_GROUPS,
+            diamond_route_index={},
+            simulate_map=True,
+        )
+
+
+class Level16CapturedRoute(FiveRockLevelRoute):
+    """Rigid route recorded manually for the lava/pit level #16."""
+
+    kind = "level16_captured"
+    rigid = True
+
+    def __init__(self, grid, player_pos, has_key=False):
+        super().__init__(
+            grid, player_pos, has_key,
+            route_start=LEVEL16_CAPTURE_START,
+            route_groups=LEVEL16_CAPTURE_GROUPS,
             diamond_route_index={},
             simulate_map=True,
         )

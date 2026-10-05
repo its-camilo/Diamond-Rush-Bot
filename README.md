@@ -30,6 +30,7 @@ recaptura).
 | 13 (dos puertas) | puertas `(4,6)` y `(11,1)` + terreno de la ruta | `(12,4)` | `L RRRR LLLL UUUUU LL U DDDDDD RRRRR UU L U R UU RR UU LLLLL UU LL D U RRRRRRR LL DD L D U LL DD RRR DDD RR` |
 | 14 (trampillas/llave) | puerta `(10,2)` + trampillas `(8,4),(11,1),(11,4),(7,8)` + terreno | `(13,4)` | `U R U RRR D U L UU L U D L RR DD LL D LLL UUUU R D L DDD RRR U RR UU R UUU L UUU R D L DD R DDD LL U R D R U D L DD LLLLL UUU R UU R LLL U R UU RR D` |
 | 15 (llave/puerta) | puerta `(4,2)` o reja `(12,3)` + terreno | `(6,1)` | `RRR DDDD RRRR UU L U L UUUU R L DDDDD RR DD LL D U RR UU LL UUUUU LL DDD LLL DDD R DD L D RRRRRR L UU RR UU LLLL UU LL UUU L` |
+| 16 (lava/fosos) | fosos `(13,5),(13,6),(13,7)` + terreno | `(6,1)` | ver `LEVEL16_CAPTURE_GROUPS` en `level_route.py` |
 
 Las firmas de los niveles 7 y 10-12 comprueban adem?s el patr?n de terreno (`_terrain_fits`: >=85% de las celdas de la ruta deben existir en el mapa). La lava del Nivel 12 a?n no la modela el simulador (rocas a la lava).
 
@@ -84,7 +85,7 @@ marcas de tiempo, duración de cada pulsación y una secuencia compacta como
 `UUU R UUUU`. Comparte esa secuencia (y, si hace falta, el JSON) para añadirla
 como flujo específico del nivel.
 
-## Tests (118, todos offline, sin navegador)
+## Tests (119, todos offline, sin navegador)
 
 ```powershell
 python -c "import sys; sys.path.insert(0, '.'); import unittest; s=unittest.defaultTestLoader.loadTestsFromNames(['test_level6_guide','test_rock_simulation','test_vision_spikes','test_main_helpers']); r=unittest.TextTestRunner(verbosity=1).run(s); sys.exit(not r.wasSuccessful())"
