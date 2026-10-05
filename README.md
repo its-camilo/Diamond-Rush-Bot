@@ -25,6 +25,7 @@ recaptura).
 | 8 (trampillas) | fosos `(9,2),(12,2)` + llave `(10,2)`/puerta `(6,7)` | `(7,5)` | `RR LLLL RRRR DDDDD LLL UUU LL DDD RRR UUU RR UUUUUUU LLLLL DDD RRR U` |
 | 9 (trampillas) | escalera `(13,8)` o trampillas `(5,1),(7,8),(12,5)` | `(3,5)` | `D LLL U L D RRR DD L D RRRR U LLLLLL R DDDD L DDD RR LL U R D R UU D LL UU RRR U D R DDD UUUU RR D L U L DD U RR DDD R` |
 | 10 (fosos/spikes) | fosos `(8,2),(8,7)` | `(6,5)` | `DDDD LLLL D R L DD RR UU R U L D L UUU L R UUU L UU RRRR DDDD L DDD RRRR D L R DD LL UU DD LLL UUU RRR D R UUU R L UUU R UU LLL DD L` |
+| 11 (llave/trampilla) | fosos `(5,7),(9,5),(12,1)` | `(4,2)` | `U L DDDD RRR U R DD RR UU DDD U LL U LLLL DDDD RRRR LLLL DD RRRR UUUU R D R UUUU DDD R LLL DD R L DD RRR L UUUUUUUUU LLL` |
 
 Trampillas (`push_button`): con peso encima (roca o jugador) abren rejas
 (`metal-door`). Una roca sobre una trampilla se sigue empujando. El simulador
@@ -77,7 +78,7 @@ marcas de tiempo, duración de cada pulsación y una secuencia compacta como
 `UUU R UUUU`. Comparte esa secuencia (y, si hace falta, el JSON) para añadirla
 como flujo específico del nivel.
 
-## Tests (113, todos offline, sin navegador)
+## Tests (114, todos offline, sin navegador)
 
 ```powershell
 python -c "import sys; sys.path.insert(0, '.'); import unittest; s=unittest.defaultTestLoader.loadTestsFromNames(['test_level6_guide','test_rock_simulation','test_vision_spikes','test_main_helpers']); r=unittest.TextTestRunner(verbosity=1).run(s); sys.exit(not r.wasSuccessful())"

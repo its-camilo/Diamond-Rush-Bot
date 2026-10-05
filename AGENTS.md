@@ -39,13 +39,14 @@ cambia: el clon debe completar solo todos los niveles de Diamond Rush.
   UUU RRRRRR DD L DD LLLLLL DD RRRRRRR UU LLLLLL UUUU RRR DD L`.
   La ruta es rígida y recaptura entre cada grupo; mientras está activa no cae
   al planner greedy.
-- Niveles 7 a 10 tambi?n son rutas r?gidas grabadas (`Level7/8/9CapturedRoute`,
+- Niveles 7 a 10 tambi?n son rutas r?gidas grabadas (`Level7-11CapturedRoute`,
   detectores `is_level7/8/9_captured_route`; secuencias en README). Orden de
   detecci?n en `main.py`: 6, 7, 8, 9, cinco rocas. Nivel 7: fosos
   `(7,4),(10,1),(10,7)`, inicio `(4,2)` (solo se reengancha sobre la ruta).
   Nivel 8 (`open_hud=True`): fosos `(9,2),(12,2)`, inicio `(7,5)`, acepta
   cualquier posici?n del jugador. Nivel 9: firma = escalera `(13,8)` o trampillas
   `(5,1),(7,8),(12,5)` (la escalera no se lee al inicio), inicio `(3,5)`.
+  Nivel 11: fosos `(5,7),(9,5),(12,1)`, inicio `(4,2)`, cualquier posici?n.
   Nivel 10: fosos `(8,2),(8,7)`, inicio `(6,5)`, cualquier posici?n.
 - Trampillas (`push_button`): una roca encima sigue siendo empujable
   (`rock-in-button`, deja la trampilla al irse). `_simulate_route_positions`

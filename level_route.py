@@ -72,6 +72,12 @@ LEVEL10_CAPTURE_GROUPS = tuple(
     "RRRR D L R DD LL UU DD LLL UUU RRR D R UUU R L UUU R UU LLL DD L".split())
 LEVEL10_CAPTURE_DIRECTIONS = tuple(
     step for group in LEVEL10_CAPTURE_GROUPS for step in group)
+LEVEL11_CAPTURE_START = (4, 2)
+LEVEL11_CAPTURE_GROUPS = tuple(
+    "U L DDDD RRR U R DD RR UU DDD U LL U LLLL DDDD RRRR LLLL DD RRRR UUUU "
+    "R D R UUUU DDD R LLL DD R L DD RRR L UUUUUUUUU LLL".split())
+LEVEL11_CAPTURE_DIRECTIONS = tuple(
+    step for group in LEVEL11_CAPTURE_GROUPS for step in group)
 LEVEL7_CAPTURE_START = (4, 2)
 LEVEL7_CAPTURE_GROUPS = (
     "R", "U", "R", "DDDD", "L", "D", "LL", "DDDD", "UU", "RRRRRR",
@@ -325,6 +331,18 @@ def is_level9_captured_route(grid):
         "push_button", "push-button", "rock-in-button")
         for p in ((5, 1), (7, 8), (12, 5)))
     return buttons >= 2
+
+
+def is_level11_captured_route(grid):
+    """Key/trapdoor board: pits (5,7),(9,5),(12,1), cage (4,4), start (4,2)."""
+    if not grid or len(grid) != 15 or len(grid[0]) != 10:
+        return False
+    if sum(_cell_type(grid, p) in ("fall", "rock-in-fall")
+           for p in ((5, 7), (9, 5), (12, 1))) < 2:
+        return False
+    return any(cell is not None and cell.cell_type in (
+        "player", "player-with-key", "player-with-key1", "player-with-key2")
+        for row in grid for cell in row)
 
 
 def is_level10_captured_route(grid):
@@ -724,6 +742,22 @@ class Level10CapturedRoute(FiveRockLevelRoute):
             grid, player_pos, has_key,
             route_start=LEVEL10_CAPTURE_START,
             route_groups=LEVEL10_CAPTURE_GROUPS,
+            diamond_route_index={},
+            simulate_map=True,
+        )
+
+
+class Level11CapturedRoute(FiveRockLevelRoute):
+    """Rigid route recorded manually for the key/trapdoor level."""
+
+    kind = "level11_captured"
+    rigid = True
+
+    def __init__(self, grid, player_pos, has_key=False):
+        super().__init__(
+            grid, player_pos, has_key,
+            route_start=LEVEL11_CAPTURE_START,
+            route_groups=LEVEL11_CAPTURE_GROUPS,
             diamond_route_index={},
             simulate_map=True,
         )

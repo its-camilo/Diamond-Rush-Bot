@@ -11,7 +11,8 @@ from level_route import (FiveRockLevelRoute, Level6CapturedRoute,
                          is_five_rock_level, is_level6_captured_route,
                          is_level7_captured_route, Level9CapturedRoute,
                          LEVEL9_CAPTURE_GROUPS, is_level9_captured_route,
-                         Level10CapturedRoute, is_level10_captured_route)
+                         Level10CapturedRoute, is_level10_captured_route,
+                         Level11CapturedRoute, is_level11_captured_route)
 
 
 def make_level_four_grid():
@@ -1499,6 +1500,20 @@ class Level10CapturedRouteTests(unittest.TestCase):
         off = self._grid((3, 3))
         route = Level10CapturedRoute(off, (3, 3))
         self.assertIsNotNone(route.next_action(off, (3, 3)))
+
+
+
+class Level11CapturedRouteTests(unittest.TestCase):
+    def test_detector_and_first_group(self):
+        grid = Level10CapturedRouteTests._grid((4, 2))
+        for pos in ((8, 2), (8, 7)):
+            grid[pos[0]][pos[1]] = Cell(pos, "terrain")
+        for pos in ((5, 7), (9, 5), (12, 1)):
+            grid[pos[0]][pos[1]] = Cell(pos, "fall")
+        self.assertTrue(is_level11_captured_route(grid))
+        self.assertFalse(is_level11_captured_route(make_new_level_grid()))
+        route = Level11CapturedRoute(grid, (4, 2))
+        self.assertEqual(route.next_action(grid, (4, 2)).path, ["up"])
 
 
 if __name__ == "__main__":
